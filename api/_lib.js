@@ -23,12 +23,24 @@ export async function redditGet(path) {
 }
 
 export async function youtubeGet(endpoint, params) {
-  const key = process.env.YOUTUBE_API_KEY;
+  // Trim defensively: a trailing newline pasted into the env var is a common
+  // cause of an otherwise valid key being rejected.
+  const key = process.env.YOUTUBE_API_KEY?.trim();
   if (!key) throw new Error("YOUTUBE_API_KEY is not set");
   const url = new URL(`https://www.googleapis.com/youtube/v3/${endpoint}`);
   Object.entries({ ...params, key }).forEach(([k, v]) => url.searchParams.set(k, v));
   const res = await fetch(url);
-  if (!res.ok) throw new Error(`YouTube ${res.status} on ${endpoint}`);
+  if (!res.ok) {
+    // Surface YouTube's own reason so a 401 or 403 is actionable rather than opaque.
+    const body = await res.text();
+    let detail = body.slice(0, 160);
+    try {
+      detail = JSON.parse(body).error?.message || detail;
+    } catch {
+      // body was not JSON, keep the raw snippet
+    }
+    throw new Error(`YouTube ${res.status} on ${endpoint}: ${detail}`);
+  }
   return res.json();
 }
 

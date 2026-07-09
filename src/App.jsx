@@ -3,11 +3,11 @@ import React, { useState, useEffect, useCallback } from "react";
 /*
   LOUDMOUTH v3
   Cultural sensing engine for Oral-B's Gen Z health positioning.
-  Harvests TikTok Creative Center trending hashtags server-side, clusters
-  them with Claude into stable tensions and live expressions, and gates
-  every expression against the product truths. Trends are the signal:
-  they show what is loud in the feed, not what any one person said.
-  Reddit and YouTube evidence layers are off for now.
+  Harvests real Reddit posts and comments server-side via the keyless
+  public API, clusters them with Claude into stable tensions and live
+  expressions, gates every expression against the product truths, and
+  attaches the receipts: actual quotes linked to their threads.
+  YouTube and TikTok layers are off for now.
 */
 
 const PASSWORD = "mouth2026";
@@ -35,12 +35,12 @@ const STATUS_STYLE = {
 };
 
 const SCAN_STAGES = [
-  "Reaching TikTok Creative Center",
-  "Pulling this week's trending hashtags",
-  "Reading trend volume and velocity",
-  "Clustering trends into tensions",
+  "Reaching Reddit's public API",
+  "Searching market subreddits per query",
+  "Pulling top comments from the loudest threads",
+  "Clustering evidence into tensions",
   "Testing bridge gates against sensor truths",
-  "Attaching trend signals",
+  "Attaching receipts",
 ];
 
 function statusOf(exp) {
@@ -179,7 +179,7 @@ function Loudmouth() {
       setData((d) => ({
         ...d,
         [market]: {
-          scannedAt: `Live scan · ${c.tiktok || 0} TikTok trends · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+          scannedAt: `Live scan · ${c.reddit || 0} Reddit posts and comments · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
           tensions: clustered.tensions,
           expressions: clustered.expressions,
           evidence,
@@ -265,11 +265,11 @@ function Loudmouth() {
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 26 }}>
           <div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 8 }}>
-              ORAL-B iO · CULTURAL SENSING ENGINE · v3 · TIKTOK CREATIVE CENTER INGESTION
+              ORAL-B iO · CULTURAL SENSING ENGINE · v3 · REDDIT PUBLIC API INGESTION
             </div>
             <h1 className="disp" style={{ fontSize: "clamp(40px, 6vw, 64px)", fontWeight: 560, lineHeight: 0.95, margin: 0 }}>LOUDMOUTH</h1>
             <div style={{ fontSize: 14, color: "#93A0BC", marginTop: 8, maxWidth: 560 }}>
-              Finds what your market is amplifying on TikTok this week. Trends in, gated insight out, the trail attached.
+              Finds what your market is already saying out loud. Real posts and comments in, gated insight out, receipts attached.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -321,7 +321,7 @@ function Loudmouth() {
             ) : current.scannedAt ? (
               <span>◆ {current.scannedAt}</span>
             ) : (
-              <span>No signal yet for {marketLabel}. Run a live scan against TikTok.</span>
+              <span>No signal yet for {marketLabel}. Run a live scan against Reddit.</span>
             )}
           </div>
           <div style={{ display: "flex", gap: 22 }}>
@@ -370,7 +370,7 @@ function Loudmouth() {
 
           <div>
             <PanelHead title="EXPRESSION TRACKER" cadence="FAST · WEEKLY" />
-            {current.expressions.length === 0 && <Empty text="Live expressions land here with velocity, expiry, bridge gates and the TikTok trend signals behind them. Run the scan." />}
+            {current.expressions.length === 0 && <Empty text="Live expressions land here with velocity, expiry, bridge gates and receipts from Reddit. Run the scan." />}
             {current.expressions.map((exp, i) => {
               const st = statusOf(exp);
               const ss = STATUS_STYLE[st];
@@ -405,7 +405,7 @@ function Loudmouth() {
                   <div style={{ display: "flex", gap: 8, marginTop: 12, flexWrap: "wrap" }}>
                     {receipts.length > 0 && (
                       <ActionButton color="#6EA8FF" onClick={() => setOpenEvidence(evidenceOpen ? null : exp.title)}>
-                        {evidenceOpen ? "HIDE TREND SIGNALS" : `TREND SIGNALS (${receipts.length})`}
+                        {evidenceOpen ? "HIDE RECEIPTS" : `RECEIPTS (${receipts.length})`}
                       </ActionButton>
                     )}
                     {st !== "KILLED" && (
@@ -423,14 +423,14 @@ function Loudmouth() {
                   {evidenceOpen && receipts.length > 0 && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(110,168,255,0.05)", border: "1px solid rgba(110,168,255,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#6EA8FF", marginBottom: 10 }}>
-                        TREND SIGNALS · TIKTOK CREATIVE CENTER · WHAT IS LOUD, NOT WHAT WAS SAID
+                        RECEIPTS · REAL POSTS AND COMMENTS · UNEDITED
                       </div>
                       {receipts.map((r) => (
                         <div key={r.id} style={{ padding: "10px 0", borderTop: "1px solid rgba(110,168,255,0.12)" }}>
-                          <div className="mono" style={{ fontSize: 13, lineHeight: 1.55, color: "#DDE5F4" }}>{r.text}</div>
+                          <div style={{ fontSize: 13, lineHeight: 1.55, color: "#DDE5F4", fontStyle: "italic" }}>"{r.text}"</div>
                           <div className="mono" style={{ fontSize: 10, color: "#8FA3C8", marginTop: 5 }}>
-                            TikTok · {r.ctx} · rank {r.score} ·{" "}
-                            <a href={r.permalink} target="_blank" rel="noreferrer">view trend ↗</a>
+                            {r.source} · {r.ctx} · score {r.score} ·{" "}
+                            <a href={r.permalink} target="_blank" rel="noreferrer">view source ↗</a>
                           </div>
                         </div>
                       ))}
@@ -491,7 +491,7 @@ function Loudmouth() {
         </div>
 
         <div className="mono" style={{ fontSize: 10, marginTop: 30, letterSpacing: "0.12em", color: "#5A6885", lineHeight: 1.8 }}>
-          LOUDMOUTH v3 · SIGNAL HARVESTED LIVE FROM TIKTOK CREATIVE CENTER TRENDING HASHTAGS · TRENDS SHOW WHAT IS LOUD, NOT WHAT ANY ONE PERSON SAID · REDDIT AND YOUTUBE LAYERS OFF FOR NOW · CULTURE SPECIMENS FROM LIVE WEB SEARCH, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
+          LOUDMOUTH v3 · EVIDENCE HARVESTED LIVE FROM REDDIT'S KEYLESS PUBLIC API · REAL POSTS AND COMMENTS, LINKED TO SOURCE · YOUTUBE AND TIKTOK LAYERS OFF FOR NOW · CULTURE SPECIMENS FROM LIVE WEB SEARCH, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
         </div>
       </div>
     </div>

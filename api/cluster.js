@@ -15,23 +15,23 @@ export default async function handler(req, res) {
 
     const evidence = items
       .slice(0, 60)
-      .map((i) => `[${i.id}] (trending hashtag, rank ${i.score}) ${i.text}`)
+      .map((i) => `[${i.id}] (${i.source} ${i.kind}, ${i.ctx}, score ${i.score}) ${i.text}`)
       .join("\n");
 
     const prompt = `You are LOUDMOUTH, a cultural sensing engine for Oral-B's Gen Z health positioning. The product: the affordable iO electric brush as the cheapest health tech you will own. Product truths for the sensor gate: pressure sensor, 2-minute timer, app score, sub-50 price.
 
-Below is this week's TikTok Creative Center data for ${cfg.label}: the top trending hashtags with their view and post volume. Each line has an id. This is trending SIGNAL, not direct speech. It shows what is loud in the market's feed right now, not what any one person said. Read it as a map of attention, and be honest about that: never phrase an expression as if someone was quoted.
+Below is REAL evidence harvested from ${cfg.label} communities on Reddit, the honesty layer: actual posts and comments, each with an id.
 
 ${evidence}
 
 Health for Gen Z means four currencies: AES (aesthetic), DAT (data/tracking), EMO (emotional/mental), ECO (economic/afford).
 
-Cluster these trends into stable tensions (hold for years) and live expressions (current behaviours). Ground everything in the trends given, not in general knowledge. Read the mouth or health angle into them only where it genuinely sits. Use the market's own register.
+Cluster this evidence into stable tensions (hold for years) and live expressions (current behaviours). Ground everything in the evidence given, not in general knowledge. Use the market's own register.
 
 Return ONLY valid JSON, no preamble, no fences:
-{"tensions":[{"id":"T1","name":"max 4 words","collision":"X x Y","currencies":["EMO"],"note":"max 22 words, grounded in the trends"}],"expressions":[{"title":"max 6 words","platform":"TikTok","velocity":3,"tensionId":"T1","summary":"max 20 words describing the trend and the behaviour behind it","expiry":"Qx 202x","currencyGate":true,"sensorGate":false,"sensorAngle":"max 14 words","evidenceIds":["E1","E2"]}]}
+{"tensions":[{"id":"T1","name":"max 4 words","collision":"X x Y","currencies":["EMO"],"note":"max 22 words, grounded in the evidence"}],"expressions":[{"title":"max 6 words","platform":"Reddit","velocity":3,"tensionId":"T1","summary":"max 20 words describing the observed behaviour","expiry":"Qx 202x","currencyGate":true,"sensorGate":false,"sensorAngle":"max 14 words","evidenceIds":["E1","E2"]}]}
 
-Rules: platform is always TikTok. exactly 3 tensions, exactly 5 expressions, velocity integer 1 to 5. evidenceIds: 1 to 3 ids per expression, ONLY ids that appear above and directly support it. sensorGate true ONLY if a product truth directly answers the behaviour. At least one expression must fail a gate. Compact JSON, no trailing commas.`;
+Rules: platform is always Reddit. exactly 3 tensions, exactly 5 expressions, velocity integer 1 to 5. evidenceIds: 1 to 3 ids per expression, ONLY ids that appear above and directly support it. sensorGate true ONLY if a product truth directly answers the behaviour. At least one expression must fail a gate. Compact JSON, no trailing commas.`;
 
     const raw = await claude({ prompt, maxTokens: 2500 });
     const parsed = extractJSON(raw);

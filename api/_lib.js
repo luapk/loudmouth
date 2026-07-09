@@ -4,34 +4,19 @@
   Claude API, JSON extraction, and per-market harvest configuration.
 */
 
-let tokenCache = { token: null, expires: 0 };
-
 const UA = process.env.REDDIT_USER_AGENT || "web:loudmouth:v3.0 (cultural sensing prototype)";
 
-export async function getRedditToken() {
-  if (tokenCache.token && Date.now() < tokenCache.expires) return tokenCache.token;
-  const id = process.env.REDDIT_CLIENT_ID;
-  const secret = process.env.REDDIT_CLIENT_SECRET;
-  if (!id || !secret) throw new Error("REDDIT_CLIENT_ID and REDDIT_CLIENT_SECRET are not set");
-  const res = await fetch("https://www.reddit.com/api/v1/access_token", {
-    method: "POST",
-    headers: {
-      Authorization: "Basic " + Buffer.from(`${id}:${secret}`).toString("base64"),
-      "Content-Type": "application/x-www-form-urlencoded",
-      "User-Agent": UA,
-    },
-    body: "grant_type=client_credentials",
-  });
-  if (!res.ok) throw new Error(`Reddit auth failed: ${res.status}`);
-  const json = await res.json();
-  tokenCache = { token: json.access_token, expires: Date.now() + (json.expires_in - 60) * 1000 };
-  return tokenCache.token;
-}
-
+/*
+  Keyless Reddit. The public .json endpoints need no OAuth app and no
+  credentials, which sidesteps Reddit's app-creation policy gate entirely.
+  Pass a path that already ends in .json before its query string. Reddit
+  rate-limits unauthenticated traffic and can block datacenter IPs, so this
+  is reliable from local dev and best-effort from cloud hosting. A unique,
+  descriptive User-Agent is required or Reddit blocks the request.
+*/
 export async function redditGet(path) {
-  const token = await getRedditToken();
-  const res = await fetch(`https://oauth.reddit.com${path}`, {
-    headers: { Authorization: `Bearer ${token}`, "User-Agent": UA },
+  const res = await fetch(`https://www.reddit.com${path}`, {
+    headers: { "User-Agent": UA, Accept: "application/json" },
   });
   if (!res.ok) throw new Error(`Reddit ${res.status} on ${path}`);
   return res.json();

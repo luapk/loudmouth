@@ -1,4 +1,4 @@
-import { redditGet, youtubeGet, tiktokTrends, MARKET_CONFIG, trim } from "./_lib.js";
+import { getRedditToken, redditGet, youtubeGet, tiktokTrends, MARKET_CONFIG, trim } from "./_lib.js";
 
 /*
   GET /api/harvest?market=UK
@@ -9,6 +9,11 @@ import { redditGet, youtubeGet, tiktokTrends, MARKET_CONFIG, trim } from "./_lib
 */
 
 async function harvestReddit(cfg) {
+  // Authenticate up front so missing credentials or a rejected auth reject
+  // this collector and surface as a note, rather than being swallowed by the
+  // per-query catches below and leaving the source silently empty.
+  await getRedditToken();
+
   const searches = await Promise.all(
     cfg.queries.map((q) =>
       redditGet(
@@ -85,6 +90,10 @@ async function harvestReddit(cfg) {
 }
 
 async function harvestYouTube(cfg) {
+  // YouTube is optional, but a missing key should say so in the amber strip
+  // rather than degrade to an unexplained empty layer.
+  if (!process.env.YOUTUBE_API_KEY) throw new Error("YOUTUBE_API_KEY is not set");
+
   const searches = await Promise.all(
     cfg.queries.map((q) =>
       youtubeGet("search", {

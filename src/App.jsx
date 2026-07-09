@@ -1,4 +1,5 @@
 import React, { useState, useEffect, useCallback } from "react";
+import { DEMO } from "./demoData";
 
 /*
   LOUDMOUTH v3
@@ -49,7 +50,7 @@ function statusOf(exp) {
   return "KILLED";
 }
 
-const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {} });
+const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, demo: false });
 
 const glass = {
   background: "rgba(255,255,255,0.028)",
@@ -183,6 +184,7 @@ function Loudmouth() {
           tensions: clustered.tensions,
           expressions: clustered.expressions,
           evidence,
+          demo: false,
         },
       }));
     } catch (e) {
@@ -192,8 +194,30 @@ function Loudmouth() {
     }
   }, [market]);
 
+  const loadDemo = useCallback(() => {
+    resetPanels();
+    const d = DEMO[market];
+    setData((prev) => ({
+      ...prev,
+      [market]: {
+        scannedAt: `Demo data · illustrative sample for ${marketLabel}, not live evidence`,
+        tensions: d.tensions,
+        expressions: d.expressions,
+        evidence: d.evidence,
+        demo: true,
+      },
+    }));
+  }, [market, marketLabel]);
+
   const mapCulture = useCallback(
     async (exp) => {
+      if (data[market].demo) {
+        const c = DEMO[market].culture;
+        setBrief(null);
+        setCulture({ forTitle: exp.title, categories: c.categories });
+        setCultureTab(c.categories[0].cat);
+        return;
+      }
       setCultureLoading(exp.title);
       setCulture(null);
       setError(null);
@@ -213,11 +237,15 @@ function Loudmouth() {
         setCultureLoading(null);
       }
     },
-    [market]
+    [market, data]
   );
 
   const generateBrief = useCallback(
     async (exp) => {
+      if (data[market].demo) {
+        setBrief({ forTitle: exp.title, ...DEMO[market].brief });
+        return;
+      }
       setBriefLoading(exp.title);
       setBrief(null);
       setError(null);
@@ -236,7 +264,7 @@ function Loudmouth() {
         setBriefLoading(null);
       }
     },
-    [market]
+    [market, data]
   );
 
   return (
@@ -315,6 +343,24 @@ function Loudmouth() {
           >
             {scanning ? "SCANNING…" : `RUN LIVE SCAN · ${market}`}
           </button>
+          <button
+            onClick={loadDemo}
+            disabled={scanning}
+            className="mono"
+            title="Load a canned sample dataset. No keys, no network."
+            style={{
+              padding: "10px 16px",
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              border: "1px solid rgba(255,176,32,0.5)",
+              background: "rgba(255,176,32,0.1)",
+              color: "#FFCB70",
+            }}
+          >
+            DEMO DATA
+          </button>
           <div className="mono" style={{ fontSize: 12, color: "#93A0BC", flex: 1, minWidth: 220 }}>
             {scanning ? (
               <span style={{ animation: "pulse 1.6s infinite" }}>▸ {SCAN_STAGES[stage]}</span>
@@ -340,6 +386,12 @@ function Loudmouth() {
         {sourceNotes.length > 0 && (
           <div className="mono" style={{ ...glass, borderColor: "rgba(255,176,32,0.3)", padding: "10px 16px", fontSize: 11, color: "#FFCB70", marginBottom: 18 }}>
             {sourceNotes.join(" · ")} · scan continued with remaining sources
+          </div>
+        )}
+
+        {current.demo && (
+          <div className="mono" style={{ ...glass, borderColor: "rgba(255,176,32,0.45)", background: "rgba(255,176,32,0.08)", padding: "10px 16px", fontSize: 11, color: "#FFCB70", marginBottom: 18, letterSpacing: "0.04em" }}>
+            DEMO DATA · illustrative sample, not live evidence · every receipt is a placeholder, not a real post · load a live scan to replace it
           </div>
         )}
 
@@ -423,14 +475,19 @@ function Loudmouth() {
                   {evidenceOpen && receipts.length > 0 && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(110,168,255,0.05)", border: "1px solid rgba(110,168,255,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#6EA8FF", marginBottom: 10 }}>
-                        RECEIPTS · REAL POSTS AND COMMENTS · UNEDITED
+                        {current.demo ? "RECEIPTS · DEMO SAMPLE · NOT REAL POSTS" : "RECEIPTS · REAL POSTS AND COMMENTS · UNEDITED"}
                       </div>
                       {receipts.map((r) => (
                         <div key={r.id} style={{ padding: "10px 0", borderTop: "1px solid rgba(110,168,255,0.12)" }}>
                           <div style={{ fontSize: 13, lineHeight: 1.55, color: "#DDE5F4", fontStyle: "italic" }}>"{r.text}"</div>
                           <div className="mono" style={{ fontSize: 10, color: "#8FA3C8", marginTop: 5 }}>
-                            {r.source} · {r.ctx} · score {r.score} ·{" "}
-                            <a href={r.permalink} target="_blank" rel="noreferrer">view source ↗</a>
+                            {r.source} · {r.ctx} · score {r.score}
+                            {r.permalink && (
+                              <>
+                                {" · "}
+                                <a href={r.permalink} target="_blank" rel="noreferrer">view source ↗</a>
+                              </>
+                            )}
                           </div>
                         </div>
                       ))}
@@ -440,7 +497,7 @@ function Loudmouth() {
                   {culture && culture.forTitle === exp.title && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(199,146,234,0.05)", border: "1px solid rgba(199,146,234,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#C792EA", marginBottom: 10 }}>
-                        CULTURE MAP · LIVE SPECIMENS · VERIFY NAMES BEFORE DECK
+                        {current.demo ? "CULTURE MAP · DEMO SAMPLE · VERIFY NAMES BEFORE DECK" : "CULTURE MAP · LIVE SPECIMENS · VERIFY NAMES BEFORE DECK"}
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                         {culture.categories.map((cat) => (

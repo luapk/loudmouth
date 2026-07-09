@@ -73,7 +73,21 @@ function Gatekeeper({ onUnlock }) {
     }
   };
   return (
-    <div style={{ minHeight: "100vh", background: "#070B14", display: "flex", alignItems: "center", justifyContent: "center", fontFamily: "'Space Grotesk', system-ui, sans-serif" }}>
+    <div
+      style={{
+        minHeight: "100vh",
+        position: "relative",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        fontFamily: "'Space Grotesk', system-ui, sans-serif",
+        backgroundColor: "#070B14",
+        backgroundImage:
+          "linear-gradient(180deg, rgba(7,11,20,0.62), rgba(7,11,20,0.86)), url('/gate-bg.jpg')",
+        backgroundSize: "cover",
+        backgroundPosition: "center",
+      }}
+    >
       <div style={{ ...glass, padding: 36, width: 320, textAlign: "center", transform: shake ? "translateX(6px)" : "none", transition: "transform 0.1s" }}>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 10 }}>
           RESTRICTED · ADAM&EVETBWA

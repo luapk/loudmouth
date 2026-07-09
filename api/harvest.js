@@ -1,12 +1,12 @@
-import { redditGet, MARKET_CONFIG, trim } from "./_lib.js";
+import { redditGet, youtubeGet, MARKET_CONFIG, trim } from "./_lib.js";
 
 /*
   GET /api/harvest?market=UK
-  Keyless Reddit harvest. Reddit is the honesty layer: real posts and the
-  top comments from the loudest threads, pulled from the public .json API
-  with no OAuth app or credentials. YouTube and TikTok are off for now and
-  are recoverable from git history. Returns a flat evidence list with
-  stable ids, sources and permalinks.
+  Two collectors run in parallel, each failing independently:
+  Reddit (honesty layer, keyless public API) and YouTube comments
+  (reaction layer, Data API v3). TikTok is off for now. A single source
+  failing is non-fatal and surfaces as a note; only an all-empty result
+  errors the scan. Returns a flat evidence list with stable ids.
 */
 
 async function harvestReddit(cfg) {
@@ -95,32 +95,104 @@ async function harvestReddit(cfg) {
   return out;
 }
 
+async function harvestYouTube(cfg) {
+  if (!process.env.YOUTUBE_API_KEY) throw new Error("YOUTUBE_API_KEY is not set");
+
+  const searches = await Promise.all(
+    cfg.queries.map((q) =>
+      youtubeGet("search", {
+        part: "snippet",
+        q: q.replace(/ OR /g, " | "),
+        type: "video",
+        maxResults: 3,
+        regionCode: cfg.region,
+        relevanceLanguage: cfg.lang,
+        order: "relevance",
+      })
+        .then((res) => ({ res }))
+        .catch((e) => ({ error: e.message }))
+    )
+  );
+
+  const ok = searches.filter((s) => s.res);
+  if (!ok.length) {
+    const reason = searches.find((s) => s.error)?.error || "all YouTube searches returned nothing";
+    throw new Error(reason);
+  }
+
+  const videos = [];
+  ok.forEach(({ res }) => {
+    (res?.items || []).slice(0, 2).forEach((v) => {
+      if (v?.id?.videoId) {
+        videos.push({
+          id: v.id.videoId,
+          title: v.snippet?.title || "",
+          channel: v.snippet?.channelTitle || "YouTube",
+        });
+      }
+    });
+  });
+
+  const commentSets = await Promise.all(
+    videos.map((v) =>
+      youtubeGet("commentThreads", {
+        part: "snippet",
+        videoId: v.id,
+        maxResults: 6,
+        order: "relevance",
+        textFormat: "plainText",
+      })
+        .then((j) => ({ video: v, items: j.items || [] }))
+        .catch(() => null)
+    )
+  );
+
+  const out = [];
+  commentSets.forEach((set) => {
+    if (!set) return;
+    set.items.forEach((t) => {
+      const s = t?.snippet?.topLevelComment?.snippet;
+      if (!s?.textDisplay) return;
+      out.push({
+        source: "youtube",
+        kind: "comment",
+        ctx: trim(set.video.title, 60),
+        text: trim(s.textDisplay, 300),
+        score: s.likeCount || 0,
+        permalink: `https://www.youtube.com/watch?v=${set.video.id}&lc=${t.id}`,
+      });
+    });
+  });
+  return out;
+}
+
 export default async function handler(req, res) {
   try {
     const market = (req.query.market || "UK").toUpperCase();
     const cfg = MARKET_CONFIG[market];
     if (!cfg) return res.status(400).json({ error: "Unknown market" });
 
+    const [reddit, youtube] = await Promise.allSettled([harvestReddit(cfg), harvestYouTube(cfg)]);
+
     const notes = [];
-    let reddit = [];
-    try {
-      reddit = await harvestReddit(cfg);
-    } catch (e) {
-      notes.push(`Reddit failed: ${e.message}`);
-    }
+    const src = { reddit: [], youtube: [] };
+    if (reddit.status === "fulfilled") src.reddit = reddit.value;
+    else notes.push(`Reddit skipped: ${reddit.reason.message}`);
+    if (youtube.status === "fulfilled") src.youtube = youtube.value;
+    else notes.push(`YouTube skipped: ${youtube.reason.message}`);
 
     let n = 0;
-    const items = reddit.map((i) => ({ id: `E${++n}`, ...i }));
+    const items = [...src.reddit, ...src.youtube].map((i) => ({ id: `E${++n}`, ...i }));
 
     if (!items.length) {
       return res.status(502).json({
-        error: `No evidence from Reddit. ${notes.join(" · ") || "The public API returned nothing this time."} Reddit is the only source while YouTube and TikTok are off. If this is a deployed host, Reddit may be blocking the datacenter IP; running locally with vercel dev usually works.`,
+        error: `No evidence from any source. ${notes.join(" · ")}`,
       });
     }
 
     res.status(200).json({
       market,
-      counts: { reddit: reddit.length },
+      counts: { reddit: src.reddit.length, youtube: src.youtube.length },
       notes,
       items,
     });

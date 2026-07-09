@@ -4,11 +4,11 @@ import { DEMO } from "./demoData";
 /*
   LOUDMOUTH v3
   Cultural sensing engine for Oral-B's Gen Z health positioning.
-  Harvests real Reddit posts and comments server-side via the keyless
-  public API, clusters them with Claude into stable tensions and live
-  expressions, gates every expression against the product truths, and
-  attaches the receipts: actual quotes linked to their threads.
-  YouTube and TikTok layers are off for now.
+  Harvests real Reddit posts and YouTube comments server-side, clusters
+  them with Claude into stable tensions and live expressions, gates every
+  expression against the product truths, and attaches the receipts:
+  actual quotes linked to their source. TikTok layer is off for now, and
+  a canned demo dataset is available offline for rehearsal.
 */
 
 const PASSWORD = "mouth2026";
@@ -36,8 +36,8 @@ const STATUS_STYLE = {
 };
 
 const SCAN_STAGES = [
-  "Reaching Reddit's public API",
-  "Searching market subreddits per query",
+  "Reaching Reddit and YouTube",
+  "Searching market subreddits and videos per query",
   "Pulling top comments from the loudest threads",
   "Clustering evidence into tensions",
   "Testing bridge gates against sensor truths",
@@ -180,7 +180,7 @@ function Loudmouth() {
       setData((d) => ({
         ...d,
         [market]: {
-          scannedAt: `Live scan · ${c.reddit || 0} Reddit posts and comments · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+          scannedAt: `Live scan · ${c.reddit || 0} Reddit · ${c.youtube || 0} YouTube · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
           tensions: clustered.tensions,
           expressions: clustered.expressions,
           evidence,
@@ -293,7 +293,7 @@ function Loudmouth() {
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 26 }}>
           <div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 8 }}>
-              ORAL-B iO · CULTURAL SENSING ENGINE · v3 · REDDIT PUBLIC API INGESTION
+              ORAL-B iO · CULTURAL SENSING ENGINE · v3 · REDDIT + YOUTUBE INGESTION
             </div>
             <h1 className="disp" style={{ fontSize: "clamp(40px, 6vw, 64px)", fontWeight: 560, lineHeight: 0.95, margin: 0 }}>LOUDMOUTH</h1>
             <div style={{ fontSize: 14, color: "#93A0BC", marginTop: 8, maxWidth: 560 }}>
@@ -367,7 +367,7 @@ function Loudmouth() {
             ) : current.scannedAt ? (
               <span>◆ {current.scannedAt}</span>
             ) : (
-              <span>No signal yet for {marketLabel}. Run a live scan against Reddit.</span>
+              <span>No signal yet for {marketLabel}. Run a live scan against Reddit and YouTube.</span>
             )}
           </div>
           <div style={{ display: "flex", gap: 22 }}>
@@ -422,7 +422,7 @@ function Loudmouth() {
 
           <div>
             <PanelHead title="EXPRESSION TRACKER" cadence="FAST · WEEKLY" />
-            {current.expressions.length === 0 && <Empty text="Live expressions land here with velocity, expiry, bridge gates and receipts from Reddit. Run the scan." />}
+            {current.expressions.length === 0 && <Empty text="Live expressions land here with velocity, expiry, bridge gates and receipts from Reddit and YouTube. Run the scan." />}
             {current.expressions.map((exp, i) => {
               const st = statusOf(exp);
               const ss = STATUS_STYLE[st];
@@ -548,7 +548,7 @@ function Loudmouth() {
         </div>
 
         <div className="mono" style={{ fontSize: 10, marginTop: 30, letterSpacing: "0.12em", color: "#5A6885", lineHeight: 1.8 }}>
-          LOUDMOUTH v3 · EVIDENCE HARVESTED LIVE FROM REDDIT'S KEYLESS PUBLIC API · REAL POSTS AND COMMENTS, LINKED TO SOURCE · YOUTUBE AND TIKTOK LAYERS OFF FOR NOW · CULTURE SPECIMENS FROM LIVE WEB SEARCH, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
+          LOUDMOUTH v3 · EVIDENCE HARVESTED LIVE FROM REDDIT POSTS AND YOUTUBE COMMENTS · REAL QUOTES, LINKED TO SOURCE · TIKTOK LAYER OFF FOR NOW · CULTURE SPECIMENS FROM LIVE WEB SEARCH, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
         </div>
       </div>
     </div>

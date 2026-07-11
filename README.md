@@ -1,66 +1,69 @@
-# LOUDMOUTH v3
+# LOUDMOUTH v4
 
-Cultural sensing engine for Oral-B's Gen Z health positioning. Harvests real Reddit posts and comments, YouTube comment threads, and TikTok Creative Center trends per market, clusters them with Claude into stable tensions and live expressions, gates every expression against the product truths (pressure sensor, timer, app score, price), and attaches receipts: actual quotes linked to their threads. Culture maps and unbranded probe briefs generate on demand.
+Cultural sensing engine for Oral-B's Gen Z health positioning (adam&eveTBWA; markets: UK, US, DE, FR, ES, IT). v4 replaces mandatory social-API ingestion with an intelligent web-search harvest driven by the Anthropic web search tool, so the only required key is `ANTHROPIC_API_KEY`.
 
-## Architecture
+Each scan teaches itself this month's live vocabulary of the mouth in culture, reads the market's pulse (charting tracks and live memes), sweeps the four currencies of health by web search, then clusters the dated, sourced evidence into stable tensions and live expressions, gating every expression against the product truths. The strategic spine (four currencies, two-speed model, bridge gates, kill rate) is unchanged from v3.
 
-- `src/` Vite + React front end. Password gated (client-side, cosmetic).
-- `api/harvest.js` runs three collectors in parallel, each failing independently:
-  - **Reddit** (honesty layer): OAuth search across market subreddits per mouth-as-context query, plus top comments from the strongest threads.
-  - **YouTube** (reaction layer): Data API v3 search per query with regionCode and relevanceLanguage, then commentThreads on the top videos.
-  - **TikTok** (cultural weather): Creative Center trending hashtags for the market this week. Unofficial public endpoint, brittle by design; when it fails the scan continues and the UI says so.
-- `api/cluster.js` one Claude call turns the evidence into the two-speed structure with evidence citations.
-- `api/culture.js` two-pass web search for named cultural specimens (search returns notes, format pass may not invent names).
-- `api/probe.js` unbranded pre-spend validation brief per certified expression.
+## What is fixed and what is fluid
 
-Market and query configuration lives in `api/_lib.js` (MARKET_CONFIG). Add markets or tune the localised queries there.
+- **Fixed, never generated:** the four currencies (AES aesthetic, DAT data/tracking, EMO emotional/mental, ECO economic/afford); the two-speed model (tensions hold for years, expressions churn weekly); the bridge gates and their product truths (pressure sensor, 2-minute timer, app score, sub-50 price); the pinned chart sources.
+- **Generated fresh every scan:** the search vocabulary. A discovery pass asks "what is the current language of this currency in this market's Gen Z culture right now?" and the terms it finds drive the sweep. Priors in `api/_lib.js` are hints, not walls, with a 2-query evergreen floor per currency so a weak discovery degrades to a mediocre scan, never an empty one.
+
+## The scan pipeline
+
+Client-orchestrated in stages so each serverless function stays inside Vercel's 60s limit. Roughly 12 to 16 web searches per market.
+
+1. `POST /api/discover { market }` — one search per currency. Returns this month's vocabulary per currency in the local language.
+2. `POST /api/pulse { market }` — the 5 tracks currently charting (Spotify, Shazam, kworb.net, cross-referenced) and the 3 memes currently live. Everything dated, sourced and confidence-flagged.
+3. `POST /api/sweep { market, currency, vocabulary }` — called once per currency, searches the discovered vocabulary plus the evergreen floor, returns 6 to 10 dated evidence items. Mouth-as-context, not dentistry.
+4. `POST /api/cluster { market, items, pulse }` — no search. Clusters the currency-tagged evidence into 3 tensions and 5 expressions with gates and citation ids; the pulse rides along as cultural weather.
+
+`POST /api/culture` and `POST /api/probe` are unchanged (culture map and unbranded probe brief, on demand).
+
+Every search query carries the current month and year, computed at runtime. Search passes prefer sources dated within 30 days; undatable material is admissible only with a visible LOW CONFIDENCE badge. Every user-facing item shows its source and date. The format passes may never introduce a name, date or fact absent from the search notes.
 
 ## Setup
 
-### 1. Reddit app
-
-Go to https://www.reddit.com/prefs/apps while logged in. Create app, type **script**. Redirect URI can be `http://localhost` (unused). Note the client id (under the app name) and the secret.
-
-Reddit's free API tier at 100 queries per minute is far more than this tool uses. A scan makes roughly 15 requests.
-
-
-### 2. YouTube API key
-
-Go to https://console.cloud.google.com, create a project, enable **YouTube Data API v3**, create an API key under Credentials. Free quota is 10,000 units per day; a scan costs roughly 510 units (search is expensive at 100 units, comments are 1), so about 19 full scans a day on the free tier. If `YOUTUBE_API_KEY` is missing the scan runs without YouTube and tells you.
-
-### 3. TikTok
-
-No key needed. The Creative Center endpoint is unofficial and can start returning 403 without notice. Treat it as a bonus layer: trends inform how Claude localises the framing, they are not evidence. The proper long-term route is TikTok's Research API, applied for under P&G's name.
-
-### 4. Environment variables
-
-Copy `.env.example` to `.env` for local dev, and add the same variables in Vercel project settings for deployment:
-
-- `ANTHROPIC_API_KEY` from console.anthropic.com
-- `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` from step 1
-- `REDDIT_USER_AGENT` e.g. `web:loudmouth:v3.0 (by /u/yourusername)`. Reddit requires a descriptive user agent.
-- `YOUTUBE_API_KEY` from Google Cloud console (optional, scan degrades gracefully without it)
-- `MODEL` optional, defaults to `claude-sonnet-4-6`
-
-### 5. Local dev
+### Zero-key quickstart
 
 ```
 npm install
 npm i -g vercel
+# set ANTHROPIC_API_KEY in .env or the shell
 vercel dev
 ```
 
-`vercel dev` runs the Vite front end and the serverless functions together. Plain `npm run dev` serves the UI only, API calls will 404.
+`vercel dev` runs the Vite front end and the serverless functions together. Plain `npm run dev` serves the UI only and every `/api/*` call 404s.
 
-### 6. Deploy
+The one required variable:
 
-Push to GitHub, import in Vercel, add the env vars, deploy. `vercel.json` already sets `maxDuration: 60` for the functions.
+- `ANTHROPIC_API_KEY` from console.anthropic.com. Used by every stage; web search is billed per search, a full scan is roughly 12 to 16 searches plus tokens.
 
-The UI password is `mouth2026`, set in `src/App.jsx` (PASSWORD constant). It is client-side gating in the usual internal-tool style, not security.
+### Optional keys (collector enrichment)
+
+The Reddit / YouTube collectors survive as an optional enrichment layer. When present they merge real comments into the cluster evidence as the strongest receipts; when absent the scan runs on search alone and the UI shows a quiet "collectors offline" line.
+
+- `YOUTUBE_API_KEY` — Google Cloud, enable YouTube Data API v3. If the key is restricted to HTTP referrers or IPs it will be rejected server-side; set application restrictions to None.
+- `REDDIT_USER_AGENT` — Reddit's public JSON API is keyless but needs a descriptive user agent, e.g. `web:loudmouth:v4.0 (by /u/yourusername)`. Reddit blocks many datacenter IPs, so the collector is reliable from local dev and best-effort on deployed hosts.
+- `MODEL` — optional, defaults to `claude-sonnet-4-6`.
+
+### Deploy
+
+Push to GitHub, import in Vercel, set `ANTHROPIC_API_KEY` (plus any optional keys), deploy. `vercel.json` sets `maxDuration: 60`. Vercel applies env vars only on new deployments, so redeploy after adding them.
+
+The UI password is `mouth2026`, set in `src/App.jsx`. Client-side gating in the usual internal-tool style, not security.
+
+## Demo mode
+
+A **DEMO DATA** button loads a fully canned dataset per market (in `src/demoData.js`) with no keys and no network: vocabulary, pulse, tensions, expressions, receipts, culture map and probe brief. It is illustrative sample content, clearly banded as DEMO throughout and never passed off as live. Use it to rehearse the UI or when a live source is unavailable.
 
 ## Honest limits
 
-- TikTok gives trends, not comments. Real TikTok comment access needs the Research API (or commercial scrapers like Apify or EnsembleData for a demo). The trend layer is still useful: it tells Claude what the market's feed looks like this week.
-- Culture map specimens come from live web search. The pipeline is instructed never to invent names and to skip empty categories, but verify every name before it goes anywhere near a deck.
-- Subreddits are a market proxy, not a census. German Reddit skews educated and male; Spanish and Italian Reddit are small relative to their TikTok cultures. Treat Reddit signal as the honesty layer, not the whole picture.
-- Client-side password gating keeps casual traffic out, nothing more. Do not put client-confidential data in the seed.
+- Web search reads the indexed internet. It cannot see inside TikTok or private communities. The pulse and vocabulary layers make the tool feel live; the optional collectors, when keyed, restore true comment-layer honesty.
+- Memes will reliably be "this week", not "this morning". Tracks are genuinely current because charts are published data. The UI does not overclaim.
+- Culture map specimens come from live web search. The pipeline is instructed never to invent names and to skip empty categories, but verify every name before it goes near a deck.
+- No caching yet. Every scan runs live searches. Caching harvests per `market:date` is the highest-value next fix, for both cost and demo latency.
+
+## House rules
+
+No em dashes anywhere. UK English. No adspeak. Dark ground, glass cards, Fraunces display, Space Grotesk UI, JetBrains Mono for data. Status colours: certified `#3DDC97`, probe/warning `#FFB020`, killed `#FF6B6B`, culture `#C792EA`, structure `#6EA8FF`. Prompts are load-bearing product; the anti-fabrication guards must survive every edit. When something fails or degrades, the UI says so, never quietly.

@@ -2,107 +2,59 @@ import { redditGet, youtubeGet, MARKET_CONFIG, trim } from "./_lib.js";
 
 /*
   GET /api/harvest?market=UK
-  Two collectors run in parallel, each failing independently:
-  Reddit (honesty layer, keyless public API) and YouTube comments
-  (reaction layer, Data API v3). TikTok is off for now. A single source
-  failing is non-fatal and surfaces as a note; only an all-empty result
-  errors the scan. Returns a flat evidence list with stable ids.
+  Optional enrichment, demoted from the required path in v4. When Reddit
+  (keyless) or YouTube (keyed) return anything, their items merge into the
+  cluster evidence as the strongest receipts, since they are real comments.
+  When they return nothing, this endpoint still responds 200 with an empty
+  list and notes, so the client can proceed on the search harvest alone and
+  show a single quiet "collectors offline" line. Never fatal.
 */
 
-async function harvestReddit(cfg) {
-  // Keep a per-query error so a total failure (e.g. an IP-blocked cloud
-  // host) surfaces as a note instead of a silent empty layer, while a
-  // single failed query still degrades gracefully.
-  const searches = await Promise.all(
-    cfg.queries.map((q) =>
-      redditGet(
-        `/r/${cfg.subs}/search.json?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance&t=year&limit=6&raw_json=1`
-      )
-        .then((listing) => ({ q, listing }))
-        .catch((e) => ({ q, error: e.message }))
-    )
-  );
-
-  const ok = searches.filter((s) => s.listing);
-  if (!ok.length) {
-    const reason = searches.find((s) => s.error)?.error || "all Reddit searches returned nothing";
-    throw new Error(reason);
-  }
-
-  const posts = [];
-  ok.forEach(({ q, listing }) => {
-    (listing.data?.children || []).forEach((c) => {
-      const d = c.data;
-      if (!d || d.stickied) return;
-      posts.push({
-        query: q,
-        id: d.id,
-        sub: d.subreddit,
-        title: d.title,
-        selftext: d.selftext,
-        score: d.score,
-        num_comments: d.num_comments,
-        permalink: `https://www.reddit.com${d.permalink}`,
-      });
-    });
-  });
-
-  const byQuery = {};
-  posts.forEach((p) => {
-    byQuery[p.query] = byQuery[p.query] || [];
-    byQuery[p.query].push(p);
-  });
-  const threadTargets = Object.values(byQuery).flatMap((arr) =>
-    arr.sort((a, b) => b.num_comments - a.num_comments).slice(0, 2)
-  );
-
-  const commentSets = await Promise.all(
-    threadTargets.map((p) =>
-      redditGet(`/comments/${p.id}.json?limit=12&depth=1&sort=top&raw_json=1`)
-        .then((j) => ({ post: p, listing: j }))
-        .catch(() => null)
-    )
-  );
-
-  const out = [];
-  posts.slice(0, 15).forEach((p) => {
-    if (!p.title && !p.selftext) return;
-    out.push({
-      source: "reddit",
-      kind: "post",
-      ctx: `r/${p.sub}`,
-      text: trim(`${p.title}. ${p.selftext || ""}`, 300),
-      score: p.score,
-      permalink: p.permalink,
-    });
-  });
-  commentSets.forEach((set) => {
-    if (!set) return;
-    const comments = set.listing?.[1]?.data?.children || [];
-    comments.slice(0, 5).forEach((c) => {
-      const d = c.data;
-      if (!d || !d.body || d.body === "[deleted]" || d.body === "[removed]") return;
-      out.push({
-        source: "reddit",
-        kind: "comment",
-        ctx: `r/${d.subreddit}`,
-        text: trim(d.body, 300),
-        score: d.score,
-        permalink: `https://www.reddit.com${d.permalink}`,
-      });
-    });
-  });
-  return out;
+// Collector queries are derived from the priors, one hint per currency, so
+// the old hard-coded query arrays are gone with the rest of v3's fixed lexicon.
+function collectorQueries(cfg) {
+  return Object.values(cfg.priors)
+    .map((p) => p.hints[0])
+    .filter(Boolean);
 }
 
-async function harvestYouTube(cfg) {
-  if (!process.env.YOUTUBE_API_KEY) throw new Error("YOUTUBE_API_KEY is not set");
-
+async function harvestReddit(cfg, queries) {
   const searches = await Promise.all(
-    cfg.queries.map((q) =>
+    queries.map((q) =>
+      redditGet(
+        `/r/${cfg.subs}/search.json?q=${encodeURIComponent(q)}&restrict_sr=1&sort=relevance&t=month&limit=6&raw_json=1`
+      )
+        .then((listing) => ({ listing }))
+        .catch((e) => ({ error: e.message }))
+    )
+  );
+  const ok = searches.filter((s) => s.listing);
+  if (!ok.length) throw new Error(searches.find((s) => s.error)?.error || "all Reddit searches returned nothing");
+
+  const out = [];
+  ok.forEach(({ listing }) => {
+    (listing.data?.children || []).forEach((c) => {
+      const d = c.data;
+      if (!d || d.stickied || (!d.title && !d.selftext)) return;
+      out.push({
+        text: trim(`${d.title}. ${d.selftext || ""}`, 240),
+        source: `Reddit r/${d.subreddit}`,
+        url: `https://www.reddit.com${d.permalink}`,
+        date: "undated",
+        confidence: "low",
+      });
+    });
+  });
+  return out.slice(0, 12);
+}
+
+async function harvestYouTube(cfg, queries) {
+  if (!process.env.YOUTUBE_API_KEY) throw new Error("YOUTUBE_API_KEY is not set");
+  const searches = await Promise.all(
+    queries.map((q) =>
       youtubeGet("search", {
         part: "snippet",
-        q: q.replace(/ OR /g, " | "),
+        q,
         type: "video",
         maxResults: 3,
         regionCode: cfg.region,
@@ -113,35 +65,19 @@ async function harvestYouTube(cfg) {
         .catch((e) => ({ error: e.message }))
     )
   );
-
   const ok = searches.filter((s) => s.res);
-  if (!ok.length) {
-    const reason = searches.find((s) => s.error)?.error || "all YouTube searches returned nothing";
-    throw new Error(reason);
-  }
+  if (!ok.length) throw new Error(searches.find((s) => s.error)?.error || "all YouTube searches returned nothing");
 
   const videos = [];
   ok.forEach(({ res }) => {
     (res?.items || []).slice(0, 2).forEach((v) => {
-      if (v?.id?.videoId) {
-        videos.push({
-          id: v.id.videoId,
-          title: v.snippet?.title || "",
-          channel: v.snippet?.channelTitle || "YouTube",
-        });
-      }
+      if (v?.id?.videoId) videos.push({ id: v.id.videoId, title: v.snippet?.title || "" });
     });
   });
 
   const commentSets = await Promise.all(
     videos.map((v) =>
-      youtubeGet("commentThreads", {
-        part: "snippet",
-        videoId: v.id,
-        maxResults: 6,
-        order: "relevance",
-        textFormat: "plainText",
-      })
+      youtubeGet("commentThreads", { part: "snippet", videoId: v.id, maxResults: 6, order: "relevance", textFormat: "plainText" })
         .then((j) => ({ video: v, items: j.items || [] }))
         .catch(() => null)
     )
@@ -154,12 +90,11 @@ async function harvestYouTube(cfg) {
       const s = t?.snippet?.topLevelComment?.snippet;
       if (!s?.textDisplay) return;
       out.push({
-        source: "youtube",
-        kind: "comment",
-        ctx: trim(set.video.title, 60),
-        text: trim(s.textDisplay, 300),
-        score: s.likeCount || 0,
-        permalink: `https://www.youtube.com/watch?v=${set.video.id}&lc=${t.id}`,
+        text: trim(s.textDisplay, 240),
+        source: `YouTube: ${trim(set.video.title, 50)}`,
+        url: `https://www.youtube.com/watch?v=${set.video.id}&lc=${t.id}`,
+        date: s.publishedAt ? s.publishedAt.slice(0, 10) : "undated",
+        confidence: s.publishedAt ? "high" : "low",
       });
     });
   });
@@ -172,30 +107,19 @@ export default async function handler(req, res) {
     const cfg = MARKET_CONFIG[market];
     if (!cfg) return res.status(400).json({ error: "Unknown market" });
 
-    const [reddit, youtube] = await Promise.allSettled([harvestReddit(cfg), harvestYouTube(cfg)]);
+    const queries = collectorQueries(cfg);
+    const [reddit, youtube] = await Promise.allSettled([harvestReddit(cfg, queries), harvestYouTube(cfg, queries)]);
 
     const notes = [];
-    const src = { reddit: [], youtube: [] };
-    if (reddit.status === "fulfilled") src.reddit = reddit.value;
-    else notes.push(`Reddit skipped: ${reddit.reason.message}`);
-    if (youtube.status === "fulfilled") src.youtube = youtube.value;
-    else notes.push(`YouTube skipped: ${youtube.reason.message}`);
+    let items = [];
+    if (reddit.status === "fulfilled") items = items.concat(reddit.value);
+    else notes.push(`Reddit offline: ${reddit.reason.message}`);
+    if (youtube.status === "fulfilled") items = items.concat(youtube.value);
+    else notes.push(`YouTube offline: ${youtube.reason.message}`);
 
-    let n = 0;
-    const items = [...src.reddit, ...src.youtube].map((i) => ({ id: `E${++n}`, ...i }));
-
-    if (!items.length) {
-      return res.status(502).json({
-        error: `No evidence from any source. ${notes.join(" · ")}`,
-      });
-    }
-
-    res.status(200).json({
-      market,
-      counts: { reddit: src.reddit.length, youtube: src.youtube.length },
-      notes,
-      items,
-    });
+    // Always 200: this layer is optional, so an empty result is a valid state,
+    // not an error. The client decides whether collectors contributed.
+    res.status(200).json({ market, ran: items.length > 0, count: items.length, notes, items });
   } catch (e) {
     res.status(500).json({ error: e.message });
   }

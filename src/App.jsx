@@ -1,14 +1,15 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useCallback } from "react";
 import { DEMO } from "./demoData";
 
 /*
-  LOUDMOUTH v3
+  LOUDMOUTH v4
   Cultural sensing engine for Oral-B's Gen Z health positioning.
-  Harvests real Reddit posts and YouTube comments server-side, clusters
-  them with Claude into stable tensions and live expressions, gates every
-  expression against the product truths, and attaches the receipts:
-  actual quotes linked to their source. TikTok layer is off for now, and
-  a canned demo dataset is available offline for rehearsal.
+  A scan runs client-side in stages: discover this month's live vocabulary
+  per currency, read the culture pulse (charting tracks and live memes),
+  sweep the four currencies by web search, then cluster into stable tensions
+  and live expressions gated against the product truths. The only required
+  key is ANTHROPIC_API_KEY. Reddit and YouTube collectors are optional
+  enrichment. A canned demo dataset runs fully offline for rehearsal.
 */
 
 const PASSWORD = "mouth2026";
@@ -36,12 +37,11 @@ const STATUS_STYLE = {
 };
 
 const SCAN_STAGES = [
-  "Reaching Reddit and YouTube",
-  "Searching market subreddits and videos per query",
-  "Pulling top comments from the loudest threads",
-  "Clustering evidence into tensions",
-  "Testing bridge gates against sensor truths",
-  "Attaching receipts",
+  "Discovering vocabulary",
+  "Reading the charts",
+  "Sweeping four currencies",
+  "Clustering evidence",
+  "Gating against sensor truths",
 ];
 
 function statusOf(exp) {
@@ -50,7 +50,18 @@ function statusOf(exp) {
   return "KILLED";
 }
 
-const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, demo: false });
+const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, vocabulary: null, pulse: null, collectors: null, demo: false });
+
+async function postJSON(url, body) {
+  const res = await fetch(url, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+  const json = await res.json();
+  if (!res.ok) throw new Error(json.error || `${url} failed`);
+  return json;
+}
 
 const glass = {
   background: "rgba(255,255,255,0.028)",
@@ -130,13 +141,6 @@ function Loudmouth() {
   const [cultureLoading, setCultureLoading] = useState(null);
   const [cultureTab, setCultureTab] = useState(null);
   const [openEvidence, setOpenEvidence] = useState(null);
-  const [sourceNotes, setSourceNotes] = useState([]);
-
-  useEffect(() => {
-    if (!scanning) return;
-    const t = setInterval(() => setStage((s) => Math.min(s + 1, SCAN_STAGES.length - 1)), 4000);
-    return () => clearInterval(t);
-  }, [scanning]);
 
   const current = data[market];
   const marketLabel = MARKETS.find((m) => m.id === market).label;
@@ -150,7 +154,6 @@ function Loudmouth() {
     setCulture(null);
     setOpenEvidence(null);
     setError(null);
-    setSourceNotes([]);
   };
 
   const runScan = useCallback(async () => {
@@ -158,32 +161,62 @@ function Loudmouth() {
     setStage(0);
     resetPanels();
     try {
-      const hRes = await fetch(`/api/harvest?market=${market}`);
-      const harvest = await hRes.json();
-      if (!hRes.ok) throw new Error(harvest.error || "Harvest failed");
-      if (!harvest.items?.length) throw new Error("Harvest returned no evidence");
-      setSourceNotes(harvest.notes || []);
+      // Stage 0: discover this month's live vocabulary per currency.
+      const disc = await postJSON("/api/discover", { market });
 
+      // Stage 1: read the culture pulse, tracks and memes.
+      setStage(1);
+      const pulse = await postJSON("/api/pulse", { market });
+
+      // Stage 2: sweep the four currencies in parallel, each seeded by its
+      // discovered vocabulary. A failed currency degrades to empty, never fatal.
+      setStage(2);
+      const sweeps = await Promise.all(
+        Object.keys(CURRENCIES).map((c) =>
+          postJSON("/api/sweep", { market, currency: c, vocabulary: (disc.vocabulary[c] || []).map((v) => v.term) })
+            .then((r) => r.items || [])
+            .catch(() => [])
+        )
+      );
+      let evidence = sweeps.flat();
+
+      // Optional collector enrichment. Best-effort, never blocks the scan.
+      let collectors = "Search-driven scan, collectors offline";
+      try {
+        const h = await fetch(`/api/harvest?market=${market}`).then((r) => r.json());
+        if (h.ran && h.items?.length) {
+          evidence = evidence.concat(h.items);
+          collectors = `Collectors online, ${h.count} extra receipts merged`;
+        } else if (h.notes?.length) {
+          collectors = `Search-driven scan, collectors offline (${h.notes.join(" · ")})`;
+        }
+      } catch {
+        // enrichment is optional, ignore
+      }
+
+      if (!evidence.length) throw new Error("The sweep gathered no evidence this scan. Try again or check ANTHROPIC_API_KEY.");
+
+      let n = 0;
+      const withIds = evidence.map((i) => ({ id: `E${++n}`, ...i }));
+      const evidenceMap = {};
+      withIds.forEach((i) => (evidenceMap[i.id] = i));
+
+      // Stage 3: cluster into the two-speed structure.
       setStage(3);
-      const cRes = await fetch("/api/cluster", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ market, items: harvest.items }),
-      });
-      const clustered = await cRes.json();
-      if (!cRes.ok) throw new Error(clustered.error || "Clustering failed");
+      const clustered = await postJSON("/api/cluster", { market, items: withIds, pulse });
+      setStage(4);
 
-      const evidence = {};
-      harvest.items.forEach((i) => (evidence[i.id] = i));
-      const c = harvest.counts || {};
-
+      const now = new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
       setData((d) => ({
         ...d,
         [market]: {
-          scannedAt: `Live scan · ${c.reddit || 0} Reddit · ${c.youtube || 0} YouTube · ${new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}`,
+          scannedAt: `Live scan · ${withIds.length} evidence · ${pulse.tracks?.length || 0} tracks · ${pulse.memes?.length || 0} memes · ${now}`,
           tensions: clustered.tensions,
           expressions: clustered.expressions,
-          evidence,
+          evidence: evidenceMap,
+          vocabulary: disc.vocabulary,
+          pulse,
+          collectors,
           demo: false,
         },
       }));
@@ -204,6 +237,9 @@ function Loudmouth() {
         tensions: d.tensions,
         expressions: d.expressions,
         evidence: d.evidence,
+        vocabulary: d.vocabulary || null,
+        pulse: d.pulse || null,
+        collectors: "Demo dataset, no live sources",
         demo: true,
       },
     }));
@@ -293,11 +329,11 @@ function Loudmouth() {
         <div style={{ display: "flex", flexWrap: "wrap", alignItems: "flex-end", justifyContent: "space-between", gap: 18, marginBottom: 26 }}>
           <div>
             <div className="mono" style={{ fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 8 }}>
-              ORAL-B iO · CULTURAL SENSING ENGINE · v3 · REDDIT + YOUTUBE INGESTION
+              ORAL-B iO · CULTURAL SENSING ENGINE · v4 · WEB SEARCH HARVEST · SELF-TAUGHT VOCABULARY
             </div>
             <h1 className="disp" style={{ fontSize: "clamp(40px, 6vw, 64px)", fontWeight: 560, lineHeight: 0.95, margin: 0 }}>LOUDMOUTH</h1>
             <div style={{ fontSize: 14, color: "#93A0BC", marginTop: 8, maxWidth: 560 }}>
-              Finds what your market is already saying out loud. Real posts and comments in, gated insight out, receipts attached.
+              Teaches itself this month's language of the mouth in culture, reads the market's pulse, gates the insight, cites the source and date.
             </div>
           </div>
           <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
@@ -363,11 +399,11 @@ function Loudmouth() {
           </button>
           <div className="mono" style={{ fontSize: 12, color: "#93A0BC", flex: 1, minWidth: 220 }}>
             {scanning ? (
-              <span style={{ animation: "pulse 1.6s infinite" }}>▸ {SCAN_STAGES[stage]}</span>
+              <span style={{ animation: "pulse 1.6s infinite" }}>▸ {stage + 1}/{SCAN_STAGES.length} · {SCAN_STAGES[stage]}</span>
             ) : current.scannedAt ? (
               <span>◆ {current.scannedAt}</span>
             ) : (
-              <span>No signal yet for {marketLabel}. Run a live scan against Reddit and YouTube.</span>
+              <span>No signal yet for {marketLabel}. Run a live scan, only ANTHROPIC_API_KEY needed.</span>
             )}
           </div>
           <div style={{ display: "flex", gap: 22 }}>
@@ -383,17 +419,21 @@ function Loudmouth() {
           </div>
         )}
 
-        {sourceNotes.length > 0 && (
-          <div className="mono" style={{ ...glass, borderColor: "rgba(255,176,32,0.3)", padding: "10px 16px", fontSize: 11, color: "#FFCB70", marginBottom: 18 }}>
-            {sourceNotes.join(" · ")} · scan continued with remaining sources
-          </div>
-        )}
-
         {current.demo && (
           <div className="mono" style={{ ...glass, borderColor: "rgba(255,176,32,0.45)", background: "rgba(255,176,32,0.08)", padding: "10px 16px", fontSize: 11, color: "#FFCB70", marginBottom: 18, letterSpacing: "0.04em" }}>
             DEMO DATA · illustrative sample, not live evidence · every receipt is a placeholder, not a real post · load a live scan to replace it
           </div>
         )}
+
+        {!current.demo && current.collectors && (
+          <div className="mono" style={{ fontSize: 10, color: "#5A6885", marginBottom: 16, letterSpacing: "0.06em" }}>
+            {current.collectors}
+          </div>
+        )}
+
+        {current.pulse && <CulturePulse pulse={current.pulse} />}
+
+        {current.vocabulary && <Vocabulary vocabulary={current.vocabulary} />}
 
         <div className="twocol" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 4fr) minmax(320px, 8fr)", gap: 20, alignItems: "start" }}>
           <div>
@@ -434,8 +474,12 @@ function Loudmouth() {
                     <div className="disp" style={{ fontSize: 19, fontWeight: 560 }}>{exp.title}</div>
                     <span className="mono" style={{ fontSize: 10, fontWeight: 600, letterSpacing: "0.14em", padding: "4px 10px", borderRadius: 999, color: ss.color, background: ss.bg }}>{st}</span>
                   </div>
-                  <div className="mono" style={{ fontSize: 11, color: "#93A0BC", margin: "6px 0 8px", display: "flex", gap: 14, flexWrap: "wrap" }}>
-                    <span>{exp.platform}</span>
+                  <div className="mono" style={{ fontSize: 11, color: "#93A0BC", margin: "6px 0 8px", display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                    {CURRENCIES[exp.currency] && (
+                      <span style={{ fontSize: 10, padding: "2px 8px", borderRadius: 999, color: CURRENCIES[exp.currency].color, border: `1px solid ${CURRENCIES[exp.currency].color}44` }}>
+                        {CURRENCIES[exp.currency].label}
+                      </span>
+                    )}
                     <span style={{ color: "#FFB020" }}>
                       {"▮".repeat(exp.velocity || 0)}
                       {"▯".repeat(Math.max(0, 5 - (exp.velocity || 0)))} velocity
@@ -475,22 +519,24 @@ function Loudmouth() {
                   {evidenceOpen && receipts.length > 0 && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(110,168,255,0.05)", border: "1px solid rgba(110,168,255,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#6EA8FF", marginBottom: 10 }}>
-                        {current.demo ? "RECEIPTS · DEMO SAMPLE · NOT REAL POSTS" : "RECEIPTS · REAL POSTS AND COMMENTS · UNEDITED"}
+                        {current.demo ? "RECEIPTS · DEMO SAMPLE · NOT REAL SOURCES" : "RECEIPTS · DATED SOURCE CITATIONS"}
                       </div>
-                      {receipts.map((r) => (
-                        <div key={r.id} style={{ padding: "10px 0", borderTop: "1px solid rgba(110,168,255,0.12)" }}>
-                          <div style={{ fontSize: 13, lineHeight: 1.55, color: "#DDE5F4", fontStyle: "italic" }}>"{r.text}"</div>
-                          <div className="mono" style={{ fontSize: 10, color: "#8FA3C8", marginTop: 5 }}>
-                            {r.source} · {r.ctx} · score {r.score}
-                            {r.permalink && (
-                              <>
-                                {" · "}
-                                <a href={r.permalink} target="_blank" rel="noreferrer">view source ↗</a>
-                              </>
-                            )}
+                      {receipts.map((r) => {
+                        const link = r.url || r.permalink;
+                        const dated = r.date && r.date !== "undated";
+                        return (
+                          <div key={r.id} style={{ padding: "10px 0", borderTop: "1px solid rgba(110,168,255,0.12)" }}>
+                            <div style={{ fontSize: 13, lineHeight: 1.55, color: "#DDE5F4", fontStyle: "italic" }}>"{r.text}"</div>
+                            <div className="mono" style={{ fontSize: 10, color: "#8FA3C8", marginTop: 5, display: "flex", gap: 8, flexWrap: "wrap", alignItems: "center" }}>
+                              <span>{r.source}{r.ctx ? ` · ${r.ctx}` : ""}{dated ? ` · ${r.date}` : ""}</span>
+                              {link && (
+                                <a href={link} target="_blank" rel="noreferrer">view source ↗</a>
+                              )}
+                              {r.confidence === "low" && <Conf />}
+                            </div>
                           </div>
-                        </div>
-                      ))}
+                        );
+                      })}
                     </div>
                   )}
 
@@ -548,7 +594,7 @@ function Loudmouth() {
         </div>
 
         <div className="mono" style={{ fontSize: 10, marginTop: 30, letterSpacing: "0.12em", color: "#5A6885", lineHeight: 1.8 }}>
-          LOUDMOUTH v3 · EVIDENCE HARVESTED LIVE FROM REDDIT POSTS AND YOUTUBE COMMENTS · REAL QUOTES, LINKED TO SOURCE · TIKTOK LAYER OFF FOR NOW · CULTURE SPECIMENS FROM LIVE WEB SEARCH, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
+          LOUDMOUTH v4 · VOCABULARY SELF-TAUGHT PER SCAN · EVIDENCE HARVESTED LIVE BY WEB SEARCH, EACH ITEM SOURCED AND DATED · MEMES ARE THIS WEEK NOT THIS MORNING, TRACKS ARE CHART DATA · CULTURE SPECIMENS AND NAMES, VERIFY BEFORE ANY DECK · INSIGHTS SHIP WITH EXPIRY DATES BY DESIGN
         </div>
       </div>
     </div>
@@ -581,6 +627,98 @@ function Stat({ label, value, color }) {
     <div style={{ textAlign: "right" }}>
       <div className="mono" style={{ fontSize: 18, fontWeight: 600, color }}>{value}</div>
       <div className="mono" style={{ fontSize: 9, letterSpacing: "0.18em", color: "#5A6885" }}>{label}</div>
+    </div>
+  );
+}
+
+function Conf() {
+  return (
+    <span className="mono" style={{ fontSize: 8, letterSpacing: "0.14em", color: "#FFB020", border: "1px solid rgba(255,176,32,0.4)", borderRadius: 4, padding: "1px 5px" }}>
+      LOW CONFIDENCE
+    </span>
+  );
+}
+
+function CulturePulse({ pulse }) {
+  const tracks = pulse.tracks || [];
+  const memes = pulse.memes || [];
+  if (!tracks.length && !memes.length) return null;
+  return (
+    <div style={{ ...glass, padding: "14px 16px", marginBottom: 18 }}>
+      <div className="mono" style={{ fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", color: "#CFE0FF", marginBottom: 12 }}>
+        CULTURE PULSE · THE FEED, AUDIBLE AND VISIBLE
+      </div>
+      <div style={{ display: "flex", gap: 20, flexWrap: "wrap" }}>
+        <div style={{ flex: "1 1 320px", minWidth: 260 }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.18em", color: "#5A6885", marginBottom: 8 }}>CHARTING NOW · {tracks.length}</div>
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+            {tracks.map((t, i) => (
+              <div key={i} style={{ minWidth: 150, flex: "0 0 auto", padding: "10px 12px", borderRadius: 10, background: "rgba(110,168,255,0.06)", border: "1px solid rgba(110,168,255,0.18)" }}>
+                <div className="disp" style={{ fontSize: 14, fontWeight: 560, color: "#E8ECF6", lineHeight: 1.2 }}>{t.title}</div>
+                <div className="mono" style={{ fontSize: 10, color: "#93A0BC", margin: "3px 0" }}>{t.artist}</div>
+                {t.context && <div style={{ fontSize: 11, color: "#8FA3C8", lineHeight: 1.4 }}>{t.context}</div>}
+                <div className="mono" style={{ fontSize: 9, color: "#5A6885", marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span>{t.source}{t.date ? ` · ${t.date}` : ""}</span>
+                  {t.confidence === "low" && <Conf />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+        <div style={{ flex: "1 1 260px", minWidth: 220 }}>
+          <div className="mono" style={{ fontSize: 9, letterSpacing: "0.18em", color: "#5A6885", marginBottom: 8 }}>LIVE MEMES · {memes.length}</div>
+          <div style={{ display: "flex", gap: 10, overflowX: "auto", paddingBottom: 4 }}>
+            {memes.map((m, i) => (
+              <div key={i} style={{ minWidth: 170, flex: "0 0 auto", padding: "10px 12px", borderRadius: 10, background: "rgba(199,146,234,0.06)", border: "1px solid rgba(199,146,234,0.18)" }}>
+                <div className="disp" style={{ fontSize: 14, fontWeight: 560, color: "#F0E6FA", lineHeight: 1.2 }}>{m.name}</div>
+                <div style={{ fontSize: 11, color: "#C3CCE0", lineHeight: 1.4, margin: "3px 0" }}>{m.description}</div>
+                <div className="mono" style={{ fontSize: 9, color: "#5A6885", marginTop: 6, display: "flex", gap: 6, flexWrap: "wrap", alignItems: "center" }}>
+                  <span>{m.platform}{m.source ? ` · ${m.source}` : ""}{m.date ? ` · ${m.date}` : ""}</span>
+                  {m.confidence === "low" && <Conf />}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function Vocabulary({ vocabulary }) {
+  const [open, setOpen] = useState(false);
+  const total = Object.values(vocabulary).reduce((n, arr) => n + (arr?.length || 0), 0);
+  if (!total) return null;
+  return (
+    <div style={{ ...glass, padding: "12px 16px", marginBottom: 20 }}>
+      <button
+        onClick={() => setOpen((o) => !o)}
+        className="mono"
+        style={{ width: "100%", display: "flex", justifyContent: "space-between", alignItems: "center", background: "transparent", border: "none", color: "#CFE0FF", fontSize: 11, fontWeight: 600, letterSpacing: "0.2em", padding: 0 }}
+      >
+        <span>VOCABULARY · SELF-TAUGHT TODAY · {total} TERMS</span>
+        <span style={{ color: "#5A6885" }}>{open ? "HIDE ▲" : "SHOW ▼"}</span>
+      </button>
+      {open && (
+        <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(220px, 1fr))", gap: 14, marginTop: 14 }}>
+          {Object.keys(CURRENCIES).map((c) => {
+            const terms = vocabulary[c] || [];
+            if (!terms.length) return null;
+            const col = CURRENCIES[c].color;
+            return (
+              <div key={c}>
+                <div className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: col, marginBottom: 8 }}>{CURRENCIES[c].label.toUpperCase()}</div>
+                {terms.map((t, i) => (
+                  <div key={i} style={{ marginBottom: 8 }}>
+                    <div style={{ fontSize: 13, color: "#E8ECF6", lineHeight: 1.3 }}>{t.term}</div>
+                    {t.note && <div className="mono" style={{ fontSize: 10, color: "#8FA3C8", lineHeight: 1.4 }}>{t.note}</div>}
+                  </div>
+                ))}
+              </div>
+            );
+          })}
+        </div>
+      )}
     </div>
   );
 }

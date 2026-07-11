@@ -249,4 +249,72 @@ const it = {
   },
 };
 
-export const DEMO = { UK: uk, US: us, DE: de, FR: fr, ES: es, IT: it };
+// Demo vocabulary per market, illustrative only. Real local terms, but the
+// DEMO banner marks the whole run as sample, not a live discovery.
+const demoVocab = {
+  UK: {
+    AES: [{ term: "tooth gems", note: "jewellery on teeth as adornment" }, { term: "grillz revival", note: "mouth as status object" }],
+    DAT: [{ term: "streak culture", note: "daily habit tracking" }, { term: "body-tracking apps", note: "quantified self" }],
+    EMO: [{ term: "the ick", note: "instant turn-off discourse" }, { term: "jaw clenching", note: "anxiety held in the body" }],
+    ECO: [{ term: "dupe culture", note: "cheaper lookalikes" }, { term: "NHS dentist crisis", note: "access read as cost" }],
+  },
+  US: {
+    AES: [{ term: "grillz", note: "mouth adornment" }, { term: "looksmaxxing mouth", note: "optimising the smile" }],
+    DAT: [{ term: "streak culture", note: "daily tracking" }, { term: "wearables", note: "quantified body" }],
+    EMO: [{ term: "the ick", note: "turn-off discourse" }, { term: "mukbang", note: "eating as performance" }],
+    ECO: [{ term: "loud budgeting", note: "openly spending less" }, { term: "dupe culture", note: "cheaper lookalikes" }],
+  },
+  DE: {
+    AES: [{ term: "Tooth Gems", note: "Schmuck auf den Zaehnen" }, { term: "Grillz", note: "Mund als Statusobjekt" }],
+    DAT: [{ term: "Streak Kultur", note: "taegliches Tracking" }, { term: "Wearables", note: "quantified self" }],
+    EMO: [{ term: "the ick", note: "sofortige Abturn-Debatte" }, { term: "Kiefer Anspannung", note: "Angst im Koerper" }],
+    ECO: [{ term: "Dupe Kultur", note: "guenstige Alternativen" }, { term: "Zahnarzt Kosten", note: "Zugang als Kostenfrage" }],
+  },
+  FR: {
+    AES: [{ term: "tooth gems", note: "bijou sur les dents" }, { term: "grillz", note: "bouche comme statut" }],
+    DAT: [{ term: "culture du streak", note: "suivi quotidien" }, { term: "wearables", note: "self quantifie" }],
+    EMO: [{ term: "the ick", note: "discours du rejet immediat" }, { term: "machoire serree", note: "anxiete dans le corps" }],
+    ECO: [{ term: "culture des dupes", note: "alternatives moins cheres" }, { term: "cout dentiste", note: "acces comme cout" }],
+  },
+  ES: {
+    AES: [{ term: "tooth gems", note: "joya en los dientes" }, { term: "grillz", note: "boca como estatus" }],
+    DAT: [{ term: "cultura del streak", note: "seguimiento diario" }, { term: "wearables", note: "yo cuantificado" }],
+    EMO: [{ term: "the ick", note: "discurso del rechazo inmediato" }, { term: "mandibula apretada", note: "ansiedad en el cuerpo" }],
+    ECO: [{ term: "cultura dupe", note: "alternativas mas baratas" }, { term: "coste dentista", note: "acceso como coste" }],
+  },
+  IT: {
+    AES: [{ term: "tooth gems", note: "gioiello sui denti" }, { term: "grillz", note: "bocca come status" }],
+    DAT: [{ term: "cultura dello streak", note: "monitoraggio quotidiano" }, { term: "wearables", note: "se quantificato" }],
+    EMO: [{ term: "the ick", note: "discorso del rifiuto immediato" }, { term: "mascella serrata", note: "ansia nel corpo" }],
+    ECO: [{ term: "cultura dupe", note: "alternative piu economiche" }, { term: "costo dentista", note: "accesso come costo" }],
+  },
+};
+
+// Sample culture pulse, scaffold placeholders so the layer renders without
+// passing off any invented track or meme as a real dated claim.
+const samplePulse = () => ({
+  tracks: [1, 2, 3, 4, 5].map((i) => ({
+    title: `Sample chart track ${i}`,
+    artist: "demo",
+    source: "demo dataset",
+    date: "sample",
+    confidence: "low",
+    context: i === 1 ? "illustrative, would ride a live sound" : "",
+  })),
+  memes: ["A", "B", "C"].map((x) => ({
+    name: `Sample meme ${x}`,
+    description: "placeholder for the live meme layer",
+    platform: "demo",
+    source: "demo dataset",
+    date: "sample",
+    confidence: "low",
+  })),
+});
+
+const markets = { UK: uk, US: us, DE: de, FR: fr, ES: es, IT: it };
+for (const [k, v] of Object.entries(markets)) {
+  v.vocabulary = demoVocab[k];
+  v.pulse = samplePulse();
+}
+
+export const DEMO = markets;

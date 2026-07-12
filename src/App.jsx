@@ -58,7 +58,17 @@ async function postJSON(url, body) {
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify(body),
   });
-  const json = await res.json();
+  // Read as text first: a timed-out or crashed function returns a plain-text
+  // platform page, not JSON, and we want a readable error, not "Unexpected token".
+  const raw = await res.text();
+  let json;
+  try {
+    json = JSON.parse(raw);
+  } catch {
+    const snippet = raw.slice(0, 90).replace(/\s+/g, " ").trim();
+    const stage = url.replace("/api/", "");
+    throw new Error(`${stage} did not return JSON (HTTP ${res.status}): ${snippet}. This usually means the function timed out or crashed.`);
+  }
   if (!res.ok) throw new Error(json.error || `${url} failed`);
   return json;
 }
@@ -160,20 +170,34 @@ function Loudmouth() {
     setScanning(true);
     setStage(0);
     resetPanels();
+    const currencies = Object.keys(CURRENCIES);
     try {
-      // Stage 0: discover this month's live vocabulary per currency.
-      const disc = await postJSON("/api/discover", { market });
+      // Stage 0: discover this month's vocabulary, one call per currency in
+      // parallel so each function runs a single search and stays under 60s.
+      const discParts = await Promise.all(
+        currencies.map((c) =>
+          postJSON("/api/discover", { market, currency: c })
+            .then((r) => r.vocabulary?.[c] || [])
+            .catch(() => [])
+        )
+      );
+      const vocabulary = {};
+      currencies.forEach((c, i) => (vocabulary[c] = discParts[i]));
 
-      // Stage 1: read the culture pulse, tracks and memes.
+      // Stage 1: culture pulse, tracks and memes as separate parallel calls.
       setStage(1);
-      const pulse = await postJSON("/api/pulse", { market });
+      const [trk, mem] = await Promise.all([
+        postJSON("/api/pulse", { market, job: "tracks" }).catch(() => ({ tracks: [] })),
+        postJSON("/api/pulse", { market, job: "memes" }).catch(() => ({ memes: [] })),
+      ]);
+      const pulse = { tracks: trk.tracks || [], memes: mem.memes || [] };
 
       // Stage 2: sweep the four currencies in parallel, each seeded by its
       // discovered vocabulary. A failed currency degrades to empty, never fatal.
       setStage(2);
       const sweeps = await Promise.all(
-        Object.keys(CURRENCIES).map((c) =>
-          postJSON("/api/sweep", { market, currency: c, vocabulary: (disc.vocabulary[c] || []).map((v) => v.term) })
+        currencies.map((c) =>
+          postJSON("/api/sweep", { market, currency: c, vocabulary: vocabulary[c].map((v) => v.term) })
             .then((r) => r.items || [])
             .catch(() => [])
         )
@@ -214,7 +238,7 @@ function Loudmouth() {
           tensions: clustered.tensions,
           expressions: clustered.expressions,
           evidence: evidenceMap,
-          vocabulary: disc.vocabulary,
+          vocabulary,
           pulse,
           collectors,
           demo: false,

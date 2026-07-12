@@ -84,15 +84,28 @@ export async function claude({ prompt, tools, maxTokens = 2000 }) {
     messages: [{ role: "user", content: prompt }],
   };
   if (tools) body.tools = tools;
-  const res = await fetch("https://api.anthropic.com/v1/messages", {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-api-key": key,
-      "anthropic-version": "2023-06-01",
-    },
-    body: JSON.stringify(body),
-  });
+  // Abort before Vercel's 60s function kill so a slow search returns a clean
+  // JSON error the client can show, not a platform timeout page.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 55000);
+  let res;
+  try {
+    res = await fetch("https://api.anthropic.com/v1/messages", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        "x-api-key": key,
+        "anthropic-version": "2023-06-01",
+      },
+      body: JSON.stringify(body),
+      signal: controller.signal,
+    });
+  } catch (e) {
+    if (e.name === "AbortError") throw new Error("Anthropic call exceeded 55s. The search stage was too slow for one function; retry, it is usually transient.");
+    throw e;
+  } finally {
+    clearTimeout(timer);
+  }
   if (!res.ok) {
     const err = await res.text();
     throw new Error(`Anthropic ${res.status}: ${err.slice(0, 200)}`);

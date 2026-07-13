@@ -23,11 +23,11 @@ export default async function handler(req, res) {
     logSearch(`sweep:${currency}`, key, 3);
     const searchPrompt = `You are LOUDMOUTH sweeping the ${currency} currency (${CURRENCY_DEFS[currency]}) in ${cfg.label}, ${month} ${year}. Treat the mouth as culture, not dentistry: speech, appetite, intimacy, performance, adornment, anxiety. Reject toothbrush press releases and dental industry content outright.
 
-Search using this vocabulary and evergreen floor: ${terms.join(" | ")}. Run up to three searches. Every query includes "${month} ${year}". Prefer sources dated within 30 days.
+Search using this vocabulary and evergreen floor: ${terms.join(" | ")}. Run up to two searches. Every query includes "${month} ${year}". Prefer sources dated within 30 days.
 
 Return 6 to 10 terse dated field notes, one per line as "what was found in max 25 words | source publication or platform | url if known | date". Only real, found material. Never invent a fact, name, date or url. Undatable items are allowed but must say "undated".`;
 
-    const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(3), maxTokens: 2000 });
+    const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(2), maxTokens: 2000, timeoutMs: 40000 });
 
     const formatPrompt = `Convert these ${currency} sweep notes for ${cfg.label} into LOUDMOUTH evidence JSON.
 

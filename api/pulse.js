@@ -15,7 +15,7 @@ Run up to two searches. Every query includes "${month} ${year}". Prefer material
 
 Return terse dated field notes only, one track per line: title, artist, which chart sources confirmed it, date, any cultural context. Only real, found tracks. Never invent a title, artist or date. If unconfirmed, say so and mark low confidence.`;
 
-  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(2), maxTokens: 1400 });
+  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(2), maxTokens: 1400, timeoutMs: 42000 });
   const formatPrompt = `Convert these track notes for ${cfg.label} into JSON.
 
 Field notes:
@@ -37,7 +37,7 @@ Run up to two searches. Every query includes "${month} ${year}". Prefer material
 
 Return terse dated field notes only, one meme per line: name, one line description, platform, source, date. Only real, found memes. Never invent a meme or date. If unconfirmed, mark low confidence.`;
 
-  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(2), maxTokens: 1200 });
+  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(2), maxTokens: 1200, timeoutMs: 42000 });
   const formatPrompt = `Convert these meme notes for ${cfg.label} into JSON.
 
 Field notes:

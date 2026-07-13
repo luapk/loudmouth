@@ -22,7 +22,7 @@ Run one search. The query must include "${month} ${year}" or at least "${year}".
 
 Return terse dated field notes only: 4 to 8 live terms or phrases in ${cfg.label}'s language, each on its own line as "term, one line on why it is current now, source or date if known". Only terms you actually found or confirmed current. Never invent a term. If thin, return fewer, never padding.`;
 
-  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(1), maxTokens: 900 });
+  const notes = await claude({ prompt: searchPrompt, tools: webSearchTool(1), maxTokens: 900, timeoutMs: 42000 });
 
   const formatPrompt = `Convert these ${c} discovery notes for ${cfg.label} into JSON.
 

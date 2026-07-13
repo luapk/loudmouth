@@ -75,7 +75,7 @@ export async function tiktokTrends(countryCode) {
   search is on, the API runs the search loop server-side and we return the
   concatenated text blocks, which is all the two-pass pattern needs.
 */
-export async function claude({ prompt, tools, maxTokens = 2000 }) {
+export async function claude({ prompt, tools, maxTokens = 2000, timeoutMs = 55000 }) {
   const key = process.env.ANTHROPIC_API_KEY;
   if (!key) throw new Error("ANTHROPIC_API_KEY is not set");
   const body = {
@@ -85,9 +85,11 @@ export async function claude({ prompt, tools, maxTokens = 2000 }) {
   };
   if (tools) body.tools = tools;
   // Abort before Vercel's 60s function kill so a slow search returns a clean
-  // JSON error the client can show, not a platform timeout page.
+  // JSON error the client can show, not a platform timeout page. Stages that
+  // make two calls (search then format) pass a tighter budget for the search
+  // pass so both fit inside the function limit.
   const controller = new AbortController();
-  const timer = setTimeout(() => controller.abort(), 55000);
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
   let res;
   try {
     res = await fetch("https://api.anthropic.com/v1/messages", {
@@ -101,7 +103,7 @@ export async function claude({ prompt, tools, maxTokens = 2000 }) {
       signal: controller.signal,
     });
   } catch (e) {
-    if (e.name === "AbortError") throw new Error("Anthropic call exceeded 55s. The search stage was too slow for one function; retry, it is usually transient.");
+    if (e.name === "AbortError") throw new Error(`Anthropic call exceeded ${Math.round(timeoutMs / 1000)}s. The search was too slow for one function; retry, it is usually transient.`);
     throw e;
   } finally {
     clearTimeout(timer);

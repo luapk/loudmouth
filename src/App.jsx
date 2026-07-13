@@ -218,6 +218,9 @@ function Loudmouth() {
     setStage(0);
     resetPanels();
     const currencies = Object.keys(CURRENCIES);
+    // Capture stage errors so an empty scan reports the real reason rather
+    // than a generic "check the key" message.
+    const stageErrors = [];
     try {
       // Stage 0: discover this month's vocabulary, one call per currency in
       // parallel so each function runs a single search and stays under 60s.
@@ -225,7 +228,10 @@ function Loudmouth() {
         currencies.map((c) =>
           postJSON("/api/discover", { market, currency: c })
             .then((r) => r.vocabulary?.[c] || [])
-            .catch(() => [])
+            .catch((e) => {
+              stageErrors.push(`discover ${c}: ${e.message}`);
+              return [];
+            })
         )
       );
       const vocabulary = {};
@@ -234,8 +240,14 @@ function Loudmouth() {
       // Stage 1: culture pulse, tracks and memes as separate parallel calls.
       setStage(1);
       const [trk, mem] = await Promise.all([
-        postJSON("/api/pulse", { market, job: "tracks" }).catch(() => ({ tracks: [] })),
-        postJSON("/api/pulse", { market, job: "memes" }).catch(() => ({ memes: [] })),
+        postJSON("/api/pulse", { market, job: "tracks" }).catch((e) => {
+          stageErrors.push(`pulse tracks: ${e.message}`);
+          return { tracks: [] };
+        }),
+        postJSON("/api/pulse", { market, job: "memes" }).catch((e) => {
+          stageErrors.push(`pulse memes: ${e.message}`);
+          return { memes: [] };
+        }),
       ]);
       const pulse = { tracks: trk.tracks || [], memes: mem.memes || [] };
 
@@ -246,7 +258,10 @@ function Loudmouth() {
         currencies.map((c) =>
           postJSON("/api/sweep", { market, currency: c, vocabulary: vocabulary[c].map((v) => v.term) })
             .then((r) => r.items || [])
-            .catch(() => [])
+            .catch((e) => {
+              stageErrors.push(`sweep ${c}: ${e.message}`);
+              return [];
+            })
         )
       );
       let evidence = sweeps.flat();
@@ -265,7 +280,13 @@ function Loudmouth() {
         // enrichment is optional, ignore
       }
 
-      if (!evidence.length) throw new Error("The sweep gathered no evidence this scan. Try again or check ANTHROPIC_API_KEY.");
+      if (!evidence.length) {
+        throw new Error(
+          stageErrors.length
+            ? `No evidence gathered. ${stageErrors.slice(0, 3).join(" · ")}`
+            : "No evidence gathered: the searches ran but returned nothing citable. Try again."
+        );
+      }
 
       let n = 0;
       const withIds = evidence.map((i) => ({ id: `E${++n}`, ...i }));

@@ -50,7 +50,7 @@ function statusOf(exp) {
   return "KILLED";
 }
 
-const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, vocabulary: null, pulse: null, collectors: null });
+const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, vocabulary: null, pulse: null });
 
 const STORAGE_KEY = "loudmouth_scans_v4";
 
@@ -266,16 +266,12 @@ function Loudmouth() {
       );
       let evidence = sweeps.flat();
 
-      // Optional collector enrichment. Best-effort, never blocks the scan.
-      let collectors = "Search-driven scan, collectors offline";
+      // Optional collector enrichment. Best-effort and silent: if Reddit or
+      // YouTube return anything it merges as extra receipts, otherwise the
+      // search harvest stands on its own.
       try {
         const h = await fetch(`/api/harvest?market=${market}`).then((r) => r.json());
-        if (h.ran && h.items?.length) {
-          evidence = evidence.concat(h.items);
-          collectors = `Collectors online, ${h.count} extra receipts merged`;
-        } else if (h.notes?.length) {
-          collectors = `Search-driven scan, collectors offline (${h.notes.join(" · ")})`;
-        }
+        if (h.ran && h.items?.length) evidence = evidence.concat(h.items);
       } catch {
         // enrichment is optional, ignore
       }
@@ -306,7 +302,6 @@ function Loudmouth() {
         evidence: evidenceMap,
         vocabulary,
         pulse,
-        collectors,
       };
       setData((d) => ({ ...d, [market]: scanObj }));
 
@@ -539,12 +534,6 @@ function Loudmouth() {
         {error && (
           <div className="mono" style={{ ...glass, borderColor: "rgba(255,107,107,0.35)", padding: "10px 16px", fontSize: 12, color: "#FF9B9B", marginBottom: 18 }}>
             {error}
-          </div>
-        )}
-
-        {current.collectors && (
-          <div className="mono" style={{ fontSize: 10, color: "#5A6885", marginBottom: 16, letterSpacing: "0.06em" }}>
-            {current.collectors}
           </div>
         )}
 

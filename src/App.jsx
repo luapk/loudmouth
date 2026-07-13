@@ -1,5 +1,4 @@
-import React, { useState, useCallback } from "react";
-import { DEMO } from "./demoData";
+import React, { useState, useEffect, useCallback } from "react";
 
 /*
   LOUDMOUTH v4
@@ -9,7 +8,8 @@ import { DEMO } from "./demoData";
   sweep the four currencies by web search, then cluster into stable tensions
   and live expressions gated against the product truths. The only required
   key is ANTHROPIC_API_KEY. Reddit and YouTube collectors are optional
-  enrichment. A canned demo dataset runs fully offline for rehearsal.
+  enrichment. The latest scan per market is persisted to localStorage so it
+  survives a refresh, and any scanned market can be exported to PPTX.
 */
 
 const PASSWORD = "mouth2026";
@@ -50,7 +50,23 @@ function statusOf(exp) {
   return "KILLED";
 }
 
-const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, vocabulary: null, pulse: null, collectors: null, demo: false });
+const emptyMarket = () => ({ scannedAt: null, tensions: [], expressions: [], evidence: {}, vocabulary: null, pulse: null, collectors: null });
+
+const STORAGE_KEY = "loudmouth_scans_v4";
+
+function loadStored() {
+  const init = {};
+  MARKETS.forEach((m) => (init[m.id] = emptyMarket()));
+  try {
+    const saved = JSON.parse(localStorage.getItem(STORAGE_KEY) || "{}");
+    Object.keys(saved).forEach((k) => {
+      if (init[k]) init[k] = { ...init[k], ...saved[k] };
+    });
+  } catch {
+    // corrupt or unavailable storage, start clean
+  }
+  return init;
+}
 
 async function postJSON(url, body) {
   const res = await fetch(url, {
@@ -137,11 +153,16 @@ function Gatekeeper({ onUnlock }) {
 
 function Loudmouth() {
   const [market, setMarket] = useState("UK");
-  const [data, setData] = useState(() => {
-    const init = {};
-    MARKETS.forEach((m) => (init[m.id] = emptyMarket()));
-    return init;
-  });
+  const [data, setData] = useState(loadStored);
+
+  // Persist scans so the latest is available after a refresh.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+    } catch {
+      // storage full or unavailable, non-fatal
+    }
+  }, [data]);
   const [scanning, setScanning] = useState(false);
   const [stage, setStage] = useState(0);
   const [error, setError] = useState(null);
@@ -241,7 +262,6 @@ function Loudmouth() {
           vocabulary,
           pulse,
           collectors,
-          demo: false,
         },
       }));
     } catch (e) {
@@ -251,33 +271,24 @@ function Loudmouth() {
     }
   }, [market]);
 
-  const loadDemo = useCallback(() => {
-    resetPanels();
-    const d = DEMO[market];
-    setData((prev) => ({
-      ...prev,
-      [market]: {
-        scannedAt: `Demo data · illustrative sample for ${marketLabel}, not live evidence`,
-        tensions: d.tensions,
-        expressions: d.expressions,
-        evidence: d.evidence,
-        vocabulary: d.vocabulary || null,
-        pulse: d.pulse || null,
-        collectors: "Demo dataset, no live sources",
-        demo: true,
-      },
-    }));
-  }, [market, marketLabel]);
+  const scannedEntries = MARKETS.map((m) => ({ id: m.id, label: m.label, market: data[m.id] })).filter(
+    (e) => e.market.scannedAt && e.market.expressions.length
+  );
+
+  const downloadPpt = useCallback(
+    (scope) => {
+      const entries = scope === "all" ? scannedEntries : scannedEntries.filter((e) => e.id === market);
+      if (!entries.length) return;
+      // Lazy-load the exporter so pptxgenjs stays out of the initial bundle.
+      import("./exportPpt")
+        .then((m) => m.exportDeck(entries))
+        .catch((e) => setError(`Export failed: ${e.message}`));
+    },
+    [scannedEntries, market]
+  );
 
   const mapCulture = useCallback(
     async (exp) => {
-      if (data[market].demo) {
-        const c = DEMO[market].culture;
-        setBrief(null);
-        setCulture({ forTitle: exp.title, categories: c.categories });
-        setCultureTab(c.categories[0].cat);
-        return;
-      }
       setCultureLoading(exp.title);
       setCulture(null);
       setError(null);
@@ -297,15 +308,11 @@ function Loudmouth() {
         setCultureLoading(null);
       }
     },
-    [market, data]
+    [market]
   );
 
   const generateBrief = useCallback(
     async (exp) => {
-      if (data[market].demo) {
-        setBrief({ forTitle: exp.title, ...DEMO[market].brief });
-        return;
-      }
       setBriefLoading(exp.title);
       setBrief(null);
       setError(null);
@@ -324,7 +331,7 @@ function Loudmouth() {
         setBriefLoading(null);
       }
     },
-    [market, data]
+    [market]
   );
 
   return (
@@ -404,22 +411,42 @@ function Loudmouth() {
             {scanning ? "SCANNING…" : `RUN LIVE SCAN · ${market}`}
           </button>
           <button
-            onClick={loadDemo}
-            disabled={scanning}
+            onClick={() => downloadPpt("market")}
+            disabled={scanning || !current.scannedAt || !current.expressions.length}
             className="mono"
-            title="Load a canned sample dataset. No keys, no network."
+            title="Download this market's latest scan as a PPTX deck."
             style={{
-              padding: "10px 16px",
+              padding: "10px 14px",
               borderRadius: 10,
               fontSize: 12,
               fontWeight: 600,
               letterSpacing: "0.06em",
-              border: "1px solid rgba(255,176,32,0.5)",
-              background: "rgba(255,176,32,0.1)",
-              color: "#FFCB70",
+              border: "1px solid rgba(61,220,151,0.4)",
+              background: "rgba(61,220,151,0.1)",
+              color: current.scannedAt && current.expressions.length ? "#8DEFC2" : "#4A6455",
+              opacity: current.scannedAt && current.expressions.length ? 1 : 0.5,
             }}
           >
-            DEMO DATA
+            PPT · {market}
+          </button>
+          <button
+            onClick={() => downloadPpt("all")}
+            disabled={scanning || scannedEntries.length === 0}
+            className="mono"
+            title="Download every scanned market as one PPTX deck."
+            style={{
+              padding: "10px 14px",
+              borderRadius: 10,
+              fontSize: 12,
+              fontWeight: 600,
+              letterSpacing: "0.06em",
+              border: "1px solid rgba(110,168,255,0.4)",
+              background: "rgba(110,168,255,0.1)",
+              color: scannedEntries.length ? "#CFE0FF" : "#3A4A66",
+              opacity: scannedEntries.length ? 1 : 0.5,
+            }}
+          >
+            PPT · ALL ({scannedEntries.length})
           </button>
           <div className="mono" style={{ fontSize: 12, color: "#93A0BC", flex: 1, minWidth: 220 }}>
             {scanning ? (
@@ -443,13 +470,7 @@ function Loudmouth() {
           </div>
         )}
 
-        {current.demo && (
-          <div className="mono" style={{ ...glass, borderColor: "rgba(255,176,32,0.45)", background: "rgba(255,176,32,0.08)", padding: "10px 16px", fontSize: 11, color: "#FFCB70", marginBottom: 18, letterSpacing: "0.04em" }}>
-            DEMO DATA · illustrative sample, not live evidence · every receipt is a placeholder, not a real post · load a live scan to replace it
-          </div>
-        )}
-
-        {!current.demo && current.collectors && (
+        {current.collectors && (
           <div className="mono" style={{ fontSize: 10, color: "#5A6885", marginBottom: 16, letterSpacing: "0.06em" }}>
             {current.collectors}
           </div>
@@ -543,7 +564,7 @@ function Loudmouth() {
                   {evidenceOpen && receipts.length > 0 && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(110,168,255,0.05)", border: "1px solid rgba(110,168,255,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#6EA8FF", marginBottom: 10 }}>
-                        {current.demo ? "RECEIPTS · DEMO SAMPLE · NOT REAL SOURCES" : "RECEIPTS · DATED SOURCE CITATIONS"}
+                        RECEIPTS · DATED SOURCE CITATIONS
                       </div>
                       {receipts.map((r) => {
                         const link = r.url || r.permalink;
@@ -567,7 +588,7 @@ function Loudmouth() {
                   {culture && culture.forTitle === exp.title && (
                     <div style={{ marginTop: 12, padding: 14, borderRadius: 10, background: "rgba(199,146,234,0.05)", border: "1px solid rgba(199,146,234,0.25)" }}>
                       <div className="mono" style={{ fontSize: 10, letterSpacing: "0.2em", color: "#C792EA", marginBottom: 10 }}>
-                        {current.demo ? "CULTURE MAP · DEMO SAMPLE · VERIFY NAMES BEFORE DECK" : "CULTURE MAP · LIVE SPECIMENS · VERIFY NAMES BEFORE DECK"}
+                        CULTURE MAP · LIVE SPECIMENS · VERIFY NAMES BEFORE DECK
                       </div>
                       <div style={{ display: "flex", gap: 6, flexWrap: "wrap", marginBottom: 12 }}>
                         {culture.categories.map((cat) => (

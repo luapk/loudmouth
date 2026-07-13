@@ -131,7 +131,7 @@ function Gatekeeper({ onUnlock }) {
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 10 }}>
           RESTRICTED · ADAM&EVETBWA
         </div>
-        <div style={{ fontFamily: "'Fraunces', serif", fontSize: 34, fontWeight: 560, color: "#E8ECF6", marginBottom: 20 }}>LOUDMOUTH</div>
+        <div style={{ fontFamily: "'Syne', 'Space Grotesk', sans-serif", fontSize: 36, fontWeight: 800, letterSpacing: "-0.02em", color: "#E8ECF6", marginBottom: 20 }}>LOUDMOUTH</div>
         <input
           type="password"
           value={value}
@@ -172,6 +172,32 @@ function Loudmouth() {
   const [cultureLoading, setCultureLoading] = useState(null);
   const [cultureTab, setCultureTab] = useState(null);
   const [openEvidence, setOpenEvidence] = useState(null);
+  const [shareStatus, setShareStatus] = useState(null);
+
+  // Pull any shared scans from the server store on load, so a scan run
+  // elsewhere is visible here. Falls back to local-only when no store.
+  useEffect(() => {
+    let alive = true;
+    fetch("/api/scans")
+      .then((r) => r.json())
+      .then((j) => {
+        if (!alive) return;
+        setShareStatus(j.configured ? "shared" : "local");
+        if (j.configured && j.scans) {
+          setData((d) => {
+            const next = { ...d };
+            Object.keys(j.scans).forEach((k) => {
+              if (j.scans[k] && next[k]) next[k] = { ...next[k], ...j.scans[k] };
+            });
+            return next;
+          });
+        }
+      })
+      .catch(() => alive && setShareStatus("local"));
+    return () => {
+      alive = false;
+    };
+  }, []);
 
   const current = data[market];
   const marketLabel = MARKETS.find((m) => m.id === market).label;
@@ -252,18 +278,26 @@ function Loudmouth() {
       setStage(4);
 
       const now = new Date().toLocaleString("en-GB", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
-      setData((d) => ({
-        ...d,
-        [market]: {
-          scannedAt: `Live scan · ${withIds.length} evidence · ${pulse.tracks?.length || 0} tracks · ${pulse.memes?.length || 0} memes · ${now}`,
-          tensions: clustered.tensions,
-          expressions: clustered.expressions,
-          evidence: evidenceMap,
-          vocabulary,
-          pulse,
-          collectors,
-        },
-      }));
+      const scanObj = {
+        scannedAt: `Live scan · ${withIds.length} evidence · ${pulse.tracks?.length || 0} tracks · ${pulse.memes?.length || 0} memes · ${now}`,
+        tensions: clustered.tensions,
+        expressions: clustered.expressions,
+        evidence: evidenceMap,
+        vocabulary,
+        pulse,
+        collectors,
+      };
+      setData((d) => ({ ...d, [market]: scanObj }));
+
+      // Share to the server store when one is connected.
+      fetch("/api/scans", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ market, scan: scanObj }),
+      })
+        .then((r) => r.json())
+        .then((j) => j.configured && setShareStatus("shared"))
+        .catch(() => {});
     } catch (e) {
       setError(e.message);
     } finally {
@@ -362,7 +396,7 @@ function Loudmouth() {
             <div className="mono" style={{ fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 8 }}>
               ORAL-B iO · CULTURAL SENSING ENGINE · v4 · WEB SEARCH HARVEST · SELF-TAUGHT VOCABULARY
             </div>
-            <h1 className="disp" style={{ fontSize: "clamp(40px, 6vw, 64px)", fontWeight: 560, lineHeight: 0.95, margin: 0 }}>LOUDMOUTH</h1>
+            <h1 style={{ fontFamily: "'Syne', 'Space Grotesk', sans-serif", fontSize: "clamp(44px, 6.5vw, 72px)", fontWeight: 800, letterSpacing: "-0.03em", lineHeight: 0.92, margin: 0 }}>LOUDMOUTH</h1>
             <div style={{ fontSize: 14, color: "#93A0BC", marginTop: 8, maxWidth: 560 }}>
               Teaches itself this month's language of the mouth in culture, reads the market's pulse, gates the insight, cites the source and date.
             </div>
@@ -457,6 +491,23 @@ function Loudmouth() {
               <span>No signal yet for {marketLabel}. Run a live scan, only ANTHROPIC_API_KEY needed.</span>
             )}
           </div>
+          {shareStatus && (
+            <span
+              className="mono"
+              title={shareStatus === "shared" ? "Scans save to the shared store and are visible to everyone who opens the tool." : "Scans save in this browser only. Connect a store to share them."}
+              style={{
+                fontSize: 9,
+                letterSpacing: "0.14em",
+                padding: "3px 9px",
+                borderRadius: 999,
+                border: shareStatus === "shared" ? "1px solid rgba(61,220,151,0.4)" : "1px solid rgba(255,255,255,0.14)",
+                color: shareStatus === "shared" ? "#3DDC97" : "#5A6885",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {shareStatus === "shared" ? "● SHARED" : "○ LOCAL ONLY"}
+            </span>
+          )}
           <div style={{ display: "flex", gap: 22 }}>
             <Stat label="CERTIFIED" value={certified} color="#3DDC97" />
             <Stat label="KILL RATE" value={`${killRate}%`} color="#FF6B6B" />
@@ -482,7 +533,7 @@ function Loudmouth() {
 
         <div className="twocol" style={{ display: "grid", gridTemplateColumns: "minmax(280px, 4fr) minmax(320px, 8fr)", gap: 20, alignItems: "start" }}>
           <div>
-            <PanelHead title="TENSION MAP" cadence="SLOW · QUARTERLY" />
+            <PanelHead title="CULTURAL TENSIONS" cadence="SLOW · HOLDS FOR YEARS" hint="The deep currents: lasting collisions in the culture that barely move year to year." />
             {current.tensions.length === 0 && <Empty text="Tensions appear here. They hold for years; the scan finds which ones this market lives in." />}
             {current.tensions.map((t) => (
               <div key={t.id} style={{ ...glass, padding: 16, marginBottom: 12, borderLeft: "3px solid #6EA8FF" }}>
@@ -506,7 +557,7 @@ function Loudmouth() {
           </div>
 
           <div>
-            <PanelHead title="EXPRESSION TRACKER" cadence="FAST · WEEKLY" />
+            <PanelHead title="LIVE EXPRESSIONS" cadence="FAST · CHANGES WEEKLY" hint="How those tensions show up right now: the current trends and behaviours they wear." />
             {current.expressions.length === 0 && <Empty text="Live expressions land here with velocity, expiry, bridge gates and receipts from Reddit and YouTube. Run the scan." />}
             {current.expressions.map((exp, i) => {
               const st = statusOf(exp);
@@ -768,11 +819,14 @@ function Vocabulary({ vocabulary }) {
   );
 }
 
-function PanelHead({ title, cadence }) {
+function PanelHead({ title, cadence, hint }) {
   return (
-    <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid rgba(110,168,255,0.15)" }}>
-      <span className="mono" style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.2em", color: "#CFE0FF" }}>{title}</span>
-      <span className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5A6885" }}>{cadence}</span>
+    <div style={{ marginBottom: 12, paddingBottom: 8, borderBottom: "1px solid rgba(110,168,255,0.15)" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 8 }}>
+        <span className="mono" style={{ fontSize: 12, fontWeight: 600, letterSpacing: "0.2em", color: "#CFE0FF" }}>{title}</span>
+        <span className="mono" style={{ fontSize: 10, letterSpacing: "0.16em", color: "#5A6885", whiteSpace: "nowrap" }}>{cadence}</span>
+      </div>
+      {hint && <div style={{ fontSize: 11.5, color: "#8FA3C8", marginTop: 5, lineHeight: 1.4 }}>{hint}</div>}
     </div>
   );
 }

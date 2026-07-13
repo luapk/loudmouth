@@ -47,6 +47,10 @@ The Reddit / YouTube collectors survive as an optional enrichment layer. When pr
 - `REDDIT_USER_AGENT` — Reddit's public JSON API is keyless but needs a descriptive user agent, e.g. `web:loudmouth:v4.0 (by /u/yourusername)`. Reddit blocks many datacenter IPs, so the collector is reliable from local dev and best-effort on deployed hosts.
 - `MODEL` — optional, defaults to `claude-sonnet-4-6`.
 
+### Optional shared scan store
+
+By default the latest scan per market is cached in the browser (localStorage), so it survives a refresh on that machine. To make scans shared, so anyone who opens the tool sees the latest scan and it persists across devices, connect a KV store: in the Vercel dashboard add a **Vercel KV / Upstash Redis** store to the project. That injects `KV_REST_API_URL` and `KV_REST_API_TOKEN` (or the `UPSTASH_REDIS_REST_*` equivalents), and `/api/scans` starts reading and writing them automatically. With no store connected the tool runs local-only; a badge in the scan bar shows SHARED or LOCAL ONLY.
+
 ### Deploy
 
 Push to GitHub, import in Vercel, set `ANTHROPIC_API_KEY` (plus any optional keys), deploy. `vercel.json` sets `maxDuration: 60`. Vercel applies env vars only on new deployments, so redeploy after adding them.

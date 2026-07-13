@@ -107,7 +107,7 @@ function vocabSlide(pptx, entry) {
 }
 
 function tensionSlide(pptx, entry) {
-  const s = head(pptx, `${entry.label} · TENSION MAP`, "SLOW · QUARTERLY");
+  const s = head(pptx, `${entry.label} · CULTURAL TENSIONS`, "SLOW · HOLDS FOR YEARS");
   const body = entry.market.tensions.flatMap((t) => [
     line(`${t.id}   ${t.name}`, { fontSize: 16, bold: true, color: LIGHT }),
     line(t.collision || "", { fontSize: 11, color: STRUCT }),
@@ -119,7 +119,7 @@ function tensionSlide(pptx, entry) {
 }
 
 function expressionSlide(pptx, entry) {
-  const s = head(pptx, `${entry.label} · EXPRESSION TRACKER`, "FAST · WEEKLY");
+  const s = head(pptx, `${entry.label} · LIVE EXPRESSIONS`, "FAST · CHANGES WEEKLY");
   const body = entry.market.expressions.flatMap((e) => {
     const st = statusOf(e);
     return [

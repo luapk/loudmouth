@@ -129,6 +129,36 @@ export function logSearch(stage, market, maxUses) {
   console.log(`[loudmouth] search stage=${stage} market=${market} max_uses=${maxUses}`);
 }
 
+/*
+  Shared scan storage via a Redis REST endpoint (Vercel KV / Upstash). The
+  integration injects KV_REST_API_URL and KV_REST_API_TOKEN (or the UPSTASH_
+  equivalents). When neither is present the tool simply runs local-only, so
+  the zero-config default still holds; sharing switches on the moment a store
+  is connected. Commands use the Upstash REST command format.
+*/
+function kvCreds() {
+  const url = process.env.KV_REST_API_URL || process.env.UPSTASH_REDIS_REST_URL;
+  const token = process.env.KV_REST_API_TOKEN || process.env.UPSTASH_REDIS_REST_TOKEN;
+  return url && token ? { url, token } : null;
+}
+
+export function kvConfigured() {
+  return !!kvCreds();
+}
+
+export async function kvCommand(args) {
+  const c = kvCreds();
+  if (!c) throw new Error("Shared store not configured");
+  const res = await fetch(c.url, {
+    method: "POST",
+    headers: { Authorization: `Bearer ${c.token}`, "Content-Type": "application/json" },
+    body: JSON.stringify(args),
+  });
+  if (!res.ok) throw new Error(`Store ${res.status}: ${(await res.text()).slice(0, 120)}`);
+  const json = await res.json();
+  return json.result;
+}
+
 export function extractJSON(text) {
   const cleaned = text.replace(/```json|```/g, "");
   const start = cleaned.indexOf("{");

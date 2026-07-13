@@ -127,11 +127,11 @@ function Gatekeeper({ onUnlock }) {
         backgroundPosition: "center",
       }}
     >
-      <div style={{ ...glass, padding: 36, width: 320, textAlign: "center", transform: shake ? "translateX(6px)" : "none", transition: "transform 0.1s" }}>
+      <div style={{ ...glass, padding: "34px 30px", width: "min(90vw, 400px)", boxSizing: "border-box", textAlign: "center", transform: shake ? "translateX(6px)" : "none", transition: "transform 0.1s" }}>
         <div style={{ fontFamily: "'JetBrains Mono', monospace", fontSize: 10, letterSpacing: "0.28em", color: "#6EA8FF", marginBottom: 10 }}>
           RESTRICTED · ADAM&EVETBWA
         </div>
-        <div style={{ fontFamily: "'Syne', 'Space Grotesk', sans-serif", fontSize: 36, fontWeight: 800, letterSpacing: "-0.02em", color: "#E8ECF6", marginBottom: 20 }}>LOUDMOUTH</div>
+        <div style={{ fontFamily: "'Syne', 'Space Grotesk', sans-serif", fontSize: "clamp(24px, 7vw, 34px)", fontWeight: 800, letterSpacing: "-0.03em", color: "#E8ECF6", marginBottom: 20, whiteSpace: "nowrap" }}>LOUDMOUTH</div>
         <input
           type="password"
           value={value}
